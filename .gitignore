@@ -1,0 +1,8 @@
+tmp/**
+videos/**
+renamed/**
+.claude/**
+__pycache__/
+CLAUDE.md
+session.md
+manifest.csv
