@@ -52,12 +52,14 @@ _AI_PAGE_HTML = """<!DOCTYPE html>
   .pill.needs_review { background:#f59e0b55; } .pill.blocked,.pill.missing { background:#dc262633; }
   .pill.working { background:#4f46e533; }
   .grid { display:grid; gap:12px; }
-  .row { display:grid; grid-template-columns:auto 96px 1fr; gap:12px; border:1px solid #8883; border-radius:14px; padding:12px; align-items:start; }
-  .thumbs { display:grid; grid-template-columns:repeat(2, 44px); gap:4px; }
-  .thumbs img { width:44px; height:34px; object-fit:cover; border-radius:6px; border:1px solid #8884; }
+  .row { display:grid; grid-template-columns:auto 1fr; gap:12px; border:1px solid #8883; border-radius:14px; padding:12px; align-items:start; }
+  .rowbody { display:grid; gap:8px; min-width:0; }
+  .rowhead { display:flex; flex-wrap:wrap; align-items:center; gap:8px; }
+  .thumbs { display:flex; flex-wrap:wrap; gap:6px; }
+  .thumbs img { width:72px; height:48px; object-fit:cover; border-radius:8px; border:1px solid #8884; }
   .meta { display:grid; gap:4px; }
   .name { font-weight:700; word-break:break-word; }
-  .result { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:8px; font-size:.88rem; margin-top:6px; }
+  .result { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:8px; font-size:.88rem; }
   details { margin-top:8px; } summary { cursor:pointer; }
 </style>
 </head>
@@ -120,7 +122,7 @@ function renderRows(rows){ const host=$("rows"); host.innerHTML=""; for(const ro
   const checkable = pending.has(row.index);
   const frames = (row.frames || []).slice(0,4).map((_,i)=>`<img alt="frame ${i+1}" src="/api/frame/${row.index}/${i}" loading="lazy"/>`).join("");
   const div=document.createElement("div"); div.className="row"; div.dataset.index=row.index;
-  div.innerHTML = `<div>${checkable?`<input type="checkbox" class="rowcheck" value="${row.index}"/>`:""}</div><div class="thumbs">${frames}</div><div class="meta"><div class="name">${esc(row.source_name)}</div><div class="cell-status">${pill(row.review_status)}</div><div class="result"><div><b>Description</b><br><span class="cell-desc">${esc(row.description)}</span></div><div><b>Client / location</b><br><span class="cell-client">${esc(row.client_or_location)}</span></div><div><b>Proposed name</b><br><span class="cell-proposed">${esc(row.proposed_name)}</span></div></div><div class="cell-note muted">${esc(row.ai_rationale || '')}</div></div>`;
+  div.innerHTML = `<div>${checkable?`<input type="checkbox" class="rowcheck" value="${row.index}"/>`:""}</div><div class="rowbody"><div class="rowhead"><span class="name">${esc(row.source_name)}</span><span class="cell-status">${pill(row.review_status)}</span></div><div class="thumbs">${frames}</div><div class="meta"><div class="result"><div><b>Description</b><br><span class="cell-desc">${esc(row.description)}</span></div><div><b>Client / location</b><br><span class="cell-client">${esc(row.client_or_location)}</span></div><div><b>Proposed name</b><br><span class="cell-proposed">${esc(row.proposed_name)}</span></div></div><div class="cell-note muted">${esc(row.ai_rationale || '')}</div></div></div>`;
   host.appendChild(div);
 }}
 async function reviewOne(index){
