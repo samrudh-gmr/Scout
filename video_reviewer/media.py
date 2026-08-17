@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import shutil
 import subprocess
 import sys
@@ -148,25 +149,65 @@ def run_ffmpeg_proxy(source_path: Path, proxy_path: Path, scale: int) -> None:
 
 
 def compute_frame_count(duration_seconds: float) -> int:
-    """Return a frame count scaled to video duration: ~1 frame per 30s, min 4, max 20."""
-    return max(4, min(20, int(duration_seconds / 30)))
+    """Default AI frame count: about one frame per 30s, min 4, max 20."""
+    if duration_seconds <= 0:
+        return 4
+    return max(4, min(20, math.ceil(duration_seconds / 30)))
 
 
-def extract_sample_frames(source_path: Path, frame_dir: Path, count: int, duration: float = 0.0) -> list[Path]:
+def sample_timestamps(duration_seconds: float, count: int) -> list[float]:
+    """Return deterministic midpoint timestamps across a video."""
+    count = max(1, int(count))
+    if duration_seconds <= 0:
+        return [float(i) for i in range(count)]
+    return [round((i + 0.5) * duration_seconds / count, 3) for i in range(count)]
+
+
+def _clear_old_frames(frame_dir: Path) -> None:
+    if not frame_dir.exists():
+        return
+    for path in frame_dir.glob("frame_*.jpg"):
+        path.unlink(missing_ok=True)
+
+
+def extract_sample_frames(
+    source_path: Path,
+    frame_dir: Path,
+    count: int,
+    duration: float = 0.0,
+    *,
+    max_width: int = 0,
+    quality: int = 2,
+) -> list[Path]:
+    """Extract exact representative frames from the source video.
+
+    Frames are not downscaled by default. Set ``max_width`` for a cost-saving mode.
+    ``quality`` maps to ffmpeg's JPEG q:v (2 is high quality, 31 is low quality).
+    """
     frame_dir.mkdir(parents=True, exist_ok=True)
-    pattern = frame_dir / "frame_%02d.jpg"
-    # Spread frames evenly across the video. interval=1 falls back to 1fps if duration unknown.
-    interval = max(1.0, duration / count) if duration > 0 else 1.0
-    cmd = [
-        get_ffmpeg_path(),
-        "-y",
-        "-i",
-        str(source_path),
-        "-vf",
-        f"fps=1/{interval:.3f},scale='min(960,iw)':-2",
-        "-frames:v",
-        str(count),
-        str(pattern),
-    ]
-    subprocess.run(cmd, check=True)
-    return sorted(frame_dir.glob("frame_*.jpg"))
+    _clear_old_frames(frame_dir)
+    outputs: list[Path] = []
+    vf: list[str] = []
+    if max_width and max_width > 0:
+        vf.append(f"scale='min({int(max_width)},iw)':-2")
+    for idx, timestamp in enumerate(sample_timestamps(duration, count)):
+        output = frame_dir / f"frame_{idx:02d}.jpg"
+        cmd = [
+            get_ffmpeg_path(),
+            "-y",
+            "-ss",
+            f"{timestamp:.3f}",
+            "-i",
+            str(source_path),
+            "-frames:v",
+            "1",
+            "-q:v",
+            str(max(2, min(31, int(quality)))),
+        ]
+        if vf:
+            cmd.extend(["-vf", ",".join(vf)])
+        cmd.append(str(output))
+        subprocess.run(cmd, check=True)
+        if output.exists():
+            outputs.append(output)
+    return outputs

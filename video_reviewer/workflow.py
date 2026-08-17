@@ -21,6 +21,7 @@ from video_reviewer.media import (
     probe_media,
     require_fftools,
     run_ffmpeg_proxy,
+    sample_timestamps,
 )
 from video_reviewer.sop import (
     VIDEO_EXTENSIONS,
@@ -56,6 +57,8 @@ def build_prepare_manifest(
     tmp_dir: Path,
     proxy_scale: int,
     sample_count: int,
+    ai_frame_max_width: int = 0,
+    ai_frame_quality: int = 2,
 ) -> list[ManifestRow]:
     require_fftools()
     candidates = sorted(
@@ -77,7 +80,24 @@ def build_prepare_manifest(
         run_ffmpeg_proxy(path, proxy_path, proxy_scale)
         duration = float(metadata.get("duration") or 0)
         frame_count = compute_frame_count(duration) if sample_count == 0 else sample_count
-        frame_paths = extract_sample_frames(proxy_path, frame_dir, frame_count, duration=duration)
+        frame_paths = extract_sample_frames(
+            path,
+            frame_dir,
+            frame_count,
+            duration=duration,
+            max_width=ai_frame_max_width,
+            quality=ai_frame_quality,
+        )
+        frame_metadata = {
+            frame.name: {
+                "source": "original",
+                "timestamp_seconds": sample_timestamps(duration, frame_count)[index] if frame_count else None,
+                "downscaled": bool(ai_frame_max_width),
+                "max_width": ai_frame_max_width,
+                "quality": ai_frame_quality,
+            }
+            for index, frame in enumerate(frame_paths)
+        }
         hint_flags = list(warnings)
         hint_flags.extend(resolution_warnings)
         rows.append(
@@ -98,9 +118,11 @@ def build_prepare_manifest(
                         "size": metadata.get("size", ""),
                         "width": metadata.get("width", ""),
                         "height": metadata.get("height", ""),
+                        "sample_frames": frame_metadata,
                     },
                     sort_keys=True,
                 ),
+                ai_frame_metadata=json.dumps(frame_metadata, sort_keys=True),
             )
         )
     rows.sort(key=lambda row: (row.capture_time == "", row.capture_time or "", natural_sort_key(Path(row.source_path).name)))

@@ -1,7 +1,7 @@
 [project]
 name = "video-renamer"
 version = "0.2.0"
-description = "AI-assisted batch video reviewer and renamer for the GMR SOP (Claude MCP edition)."
+description = "AI-assisted batch video reviewer and renamer for the GMR SOP."
 requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.110",
@@ -9,6 +9,7 @@ dependencies = [
     "python-multipart>=0.0.9",
     "mcp>=1.0",
     "static-ffmpeg>=2.1",
+    "google-genai>=1.0",
 ]
 
 [project.scripts]
@@ -19,7 +20,7 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
-packages = ["video_reviewer"]
+packages = ["video_reviewer", "video_reviewer.ai_review", "video_reviewer.ai_review.providers"]
 
 [tool.setuptools.package-data]
 video_reviewer = ["static/*", "static/**/*"]

@@ -7,6 +7,7 @@ from video_reviewer.manifest import (
     REVIEW_APPLIED,
     REVIEW_APPROVED,
     REVIEW_BLOCKED,
+    REVIEW_NEEDS_REVIEW,
     REVIEW_PENDING,
     read_manifest_csv,
     write_manifest_csv,
@@ -47,7 +48,7 @@ def test_prepare_creates_manifest_rows(monkeypatch, tmp_path: Path) -> None:
     )
     monkeypatch.setattr("video_reviewer.workflow.run_ffmpeg_proxy", lambda source_path, proxy_path, scale: proxy_path.write_bytes(b"proxy"))
 
-    def fake_extract(source_path: Path, frame_dir: Path, count: int, duration: float = 0.0) -> list[Path]:
+    def fake_extract(source_path: Path, frame_dir: Path, count: int, duration: float = 0.0, **kwargs) -> list[Path]:
         frame_dir.mkdir(parents=True, exist_ok=True)
         frames = []
         for index in range(count):
@@ -86,7 +87,7 @@ def test_prepare_without_batch_year_month_uses_filename_inference(monkeypatch, t
     monkeypatch.setattr("video_reviewer.workflow.run_ffmpeg_proxy", lambda source_path, proxy_path, scale: proxy_path.write_bytes(b"proxy"))
     monkeypatch.setattr(
         "video_reviewer.workflow.extract_sample_frames",
-        lambda source_path, frame_dir, count, duration=0.0: [],
+        lambda source_path, frame_dir, count, duration=0.0, **kwargs: [],
     )
 
     rows = build_prepare_manifest(
@@ -121,7 +122,7 @@ def test_prepare_without_batch_year_month_uses_creation_time(monkeypatch, tmp_pa
     monkeypatch.setattr("video_reviewer.workflow.run_ffmpeg_proxy", lambda source_path, proxy_path, scale: proxy_path.write_bytes(b"proxy"))
     monkeypatch.setattr(
         "video_reviewer.workflow.extract_sample_frames",
-        lambda source_path, frame_dir, count, duration=0.0: [],
+        lambda source_path, frame_dir, count, duration=0.0, **kwargs: [],
     )
 
     rows = build_prepare_manifest(
@@ -150,7 +151,7 @@ def test_prepare_without_any_date_leaves_year_month_blank(monkeypatch, tmp_path:
     monkeypatch.setattr("video_reviewer.workflow.run_ffmpeg_proxy", lambda source_path, proxy_path, scale: proxy_path.write_bytes(b"proxy"))
     monkeypatch.setattr(
         "video_reviewer.workflow.extract_sample_frames",
-        lambda source_path, frame_dir, count, duration=0.0: [],
+        lambda source_path, frame_dir, count, duration=0.0, **kwargs: [],
     )
 
     rows = build_prepare_manifest(
@@ -163,6 +164,20 @@ def test_prepare_without_any_date_leaves_year_month_blank(monkeypatch, tmp_path:
     )
     assert rows[0].year_month == ""
     assert "needs manual review" in rows[0].source_hints
+
+
+def test_sample_timestamps_use_midpoints() -> None:
+    from video_reviewer.media import sample_timestamps
+
+    assert sample_timestamps(100.0, 4) == [12.5, 37.5, 62.5, 87.5]
+
+
+def test_compute_frame_count_ceil_min_and_cap() -> None:
+    from video_reviewer.media import compute_frame_count
+
+    assert compute_frame_count(10) == 4
+    assert compute_frame_count(121) == 5
+    assert compute_frame_count(9999) == 20
 
 
 def test_apply_renames_only_approved(tmp_path: Path) -> None:
@@ -202,6 +217,166 @@ def test_apply_renames_only_approved(tmp_path: Path) -> None:
     saved = read_manifest_csv(manifest)
     assert saved[0].review_status == REVIEW_APPLIED
     assert saved[1].review_status == REVIEW_BLOCKED
+
+
+def _manifest_with_frame(tmp_path: Path) -> Path:
+    """A one-row pending manifest whose single sample frame exists on disk."""
+    frame = tmp_path / "frame_00.jpg"
+    frame.write_bytes(b"\xff\xd8\xff\xd9")  # minimal JPEG-ish bytes
+    source = tmp_path / "clip.mov"
+    source.write_bytes(b"0")
+    manifest = tmp_path / "manifest.csv"
+    write_manifest_csv(
+        manifest,
+        [
+            ManifestRow(
+                source_path=str(source.resolve()),
+                sample_frames=str(frame.resolve()),
+                year_month="2024-07",
+                sequence="001",
+                review_status=REVIEW_PENDING,
+            )
+        ],
+    )
+    return manifest
+
+
+def test_gemini_available_reports_missing_sdk(monkeypatch) -> None:
+    from video_reviewer import gemini_review
+
+    monkeypatch.setattr("video_reviewer.ai_review.providers.gemini.GeminiProvider._sdk_installed", lambda self: False)
+    sdk_ready, has_key, message = gemini_review.gemini_available()
+    assert sdk_ready is False and has_key is False
+    assert "google-genai" in message
+
+
+def test_gemini_available_needs_key(monkeypatch) -> None:
+    from video_reviewer import gemini_review
+
+    monkeypatch.setattr("video_reviewer.ai_review.providers.gemini.GeminiProvider._sdk_installed", lambda self: True)
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+    sdk_ready, has_key, message = gemini_review.gemini_available()
+    assert sdk_ready is True and has_key is False
+    assert "aistudio.google.com" in message
+
+
+def test_pending_indices_includes_pending_and_blocked(tmp_path: Path) -> None:
+    from video_reviewer.gemini_review import pending_indices
+
+    manifest = tmp_path / "manifest.csv"
+    write_manifest_csv(
+        manifest,
+        [
+            ManifestRow(source_path="/tmp/a.mov", review_status=REVIEW_PENDING),
+            ManifestRow(source_path="/tmp/b.mov", review_status=REVIEW_APPROVED),
+            ManifestRow(source_path="/tmp/c.mov", review_status=REVIEW_BLOCKED),
+        ],
+    )
+    assert pending_indices(manifest) == [0, 2]
+
+
+def test_review_rows_approves_high_confidence(monkeypatch, tmp_path: Path) -> None:
+    from video_reviewer import gemini_review
+
+    manifest = _manifest_with_frame(tmp_path)
+    monkeypatch.setattr("video_reviewer.ai_review.providers.gemini.GeminiProvider._sdk_installed", lambda self: True)
+    monkeypatch.setattr(
+        "video_reviewer.ai_review.providers.gemini.GeminiProvider._generate",
+        lambda self, key, model, request: {
+            "description": "Sanding Metal Panel",
+            "client_or_location": "GMR HQ",
+            "is_manual": True,
+            "confidence": 0.92,
+            "rationale": "Operator sanding a panel.",
+            "flags": [],
+        },
+    )
+
+    results = gemini_review.review_rows(manifest, [0], api_key="test-key")
+    result = results[0]
+    assert result.ok is True
+    assert result.status == REVIEW_APPROVED
+    assert result.proposed_name == "2024-07_Sanding Metal Panel_GMR HQ_001.mov"
+    assert result.confidence == 0.92
+
+    saved = read_manifest_csv(manifest)
+    assert saved[0].ai_confidence == "0.92"
+    assert saved[0].ai_rationale == "Operator sanding a panel."
+
+
+def test_review_rows_flags_low_confidence_for_review(monkeypatch, tmp_path: Path) -> None:
+    from video_reviewer import gemini_review
+
+    manifest = _manifest_with_frame(tmp_path)
+    monkeypatch.setattr("video_reviewer.ai_review.providers.gemini.GeminiProvider._sdk_installed", lambda self: True)
+    monkeypatch.setattr(
+        "video_reviewer.ai_review.providers.gemini.GeminiProvider._generate",
+        lambda self, key, model, request: {
+            "description": "Sanding Metal Panel",
+            "client_or_location": "Unknown",
+            "confidence": 0.30,
+            "rationale": "Frames are blurry.",
+            "flags": ["low light"],
+        },
+    )
+
+    result = gemini_review.review_rows(manifest, [0], api_key="test-key")[0]
+    assert result.ok is False
+    assert result.status == REVIEW_NEEDS_REVIEW
+    assert not result.error
+
+
+def test_review_rows_blocks_invalid_field(monkeypatch, tmp_path: Path) -> None:
+    from video_reviewer import gemini_review
+
+    manifest = _manifest_with_frame(tmp_path)
+    monkeypatch.setattr("video_reviewer.ai_review.providers.gemini.GeminiProvider._sdk_installed", lambda self: True)
+    monkeypatch.setattr(
+        "video_reviewer.ai_review.providers.gemini.GeminiProvider._generate",
+        lambda self, key, model, request: {
+            "description": "Bad_Description",  # underscore violates the SOP
+            "client_or_location": "GMR HQ",
+            "confidence": 0.95,
+            "rationale": "x",
+            "flags": [],
+        },
+    )
+
+    result = gemini_review.review_rows(manifest, [0], api_key="test-key")[0]
+    assert result.ok is False
+    assert result.status == REVIEW_BLOCKED
+    assert "underscore" in result.error
+
+
+def test_review_rows_surfaces_api_error(monkeypatch, tmp_path: Path) -> None:
+    from video_reviewer import gemini_review
+
+    manifest = _manifest_with_frame(tmp_path)
+    monkeypatch.setattr("video_reviewer.ai_review.providers.gemini.GeminiProvider._sdk_installed", lambda self: True)
+
+    def boom(self, key, model, request):
+        raise RuntimeError("429 rate limit")
+
+    monkeypatch.setattr("video_reviewer.ai_review.providers.gemini.GeminiProvider._generate", boom)
+    result = gemini_review.review_rows(manifest, [0], api_key="test-key")[0]
+    assert result.ok is False
+    assert "rate limit" in result.error
+
+
+def test_review_rows_requires_api_key(monkeypatch, tmp_path: Path) -> None:
+    from video_reviewer import gemini_review
+
+    manifest = _manifest_with_frame(tmp_path)
+    monkeypatch.setattr("video_reviewer.ai_review.providers.gemini.GeminiProvider._sdk_installed", lambda self: True)
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+    try:
+        gemini_review.review_rows(manifest, [0])
+    except gemini_review.GeminiError as exc:
+        assert "API key" in str(exc)
+    else:
+        raise AssertionError("Expected GeminiError when no API key is available")
 
 
 def test_build_proposed_name() -> None:

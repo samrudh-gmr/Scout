@@ -1,13 +1,12 @@
 {
   "mcpServers": {
     "video-renamer": {
-      "command": "wsl.exe",
+      "command": "uv",
       "args": [
-        "/home/samrudhmoode/.local/bin/uv",
         "run",
-        "--project", "/home/samrudhmoode/projects/video_reaname",
+        "--project", "/path/to/claude_mcp",
         "python", "-m", "video_reviewer.mcp_server",
-        "--manifest", "/home/samrudhmoode/projects/video_reaname/manifest.csv"
+        "--manifest", "/path/to/manifest.csv"
       ]
     }
   }

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import csv
+import os
+import tempfile
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -17,6 +19,7 @@ MANIFEST_COLUMNS = [
     "ai_confidence",
     "ai_rationale",
     "ai_flags",
+    "ai_frame_metadata",
     "review_status",
     "capture_time",
     "source_hints",
@@ -42,6 +45,7 @@ class ManifestRow:
     ai_confidence: str = ""
     ai_rationale: str = ""
     ai_flags: str = ""
+    ai_frame_metadata: str = ""
     review_status: str = REVIEW_PENDING
     capture_time: str = ""
     source_hints: str = ""
@@ -49,14 +53,18 @@ class ManifestRow:
 
 def write_manifest_csv(path: Path, rows: list[ManifestRow]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", newline="", encoding="utf-8") as handle:
+    fd, temp_name = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
+    temp_path = Path(temp_name)
+    with os.fdopen(fd, "w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(handle, fieldnames=MANIFEST_COLUMNS)
         writer.writeheader()
         for row in rows:
             writer.writerow(asdict(row))
+    os.replace(temp_path, path)
 
 
 def read_manifest_csv(path: Path) -> list[ManifestRow]:
     with path.open("r", newline="", encoding="utf-8") as handle:
         reader = csv.DictReader(handle)
-        return [ManifestRow(**row) for row in reader]
+        allowed = set(MANIFEST_COLUMNS)
+        return [ManifestRow(**{key: value for key, value in row.items() if key in allowed}) for row in reader]
