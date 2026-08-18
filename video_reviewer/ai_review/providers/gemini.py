@@ -129,24 +129,9 @@ class GeminiProvider:
         from google import genai
         from google.genai import types
 
-        context = {
-            "source_name": request.source_name,
-            "year_month": request.year_month,
-            "capture_time": request.capture_time,
-            "source_hints": request.source_hints,
-            "frames": [
-                {
-                    "index": idx,
-                    "timestamp_seconds": frame.timestamp_seconds,
-                    "width": frame.width,
-                    "height": frame.height,
-                    "downscaled": frame.downscaled,
-                }
-                for idx, frame in enumerate(request.frames)
-            ],
-        }
-        prompt = PROMPT_TEMPLATE.format(context=json.dumps(context, indent=2, sort_keys=True))
-        parts: list[Any] = [types.Part.from_text(text=prompt)]
+        from video_reviewer.ai_review.providers.common import prompt_for
+
+        parts: list[Any] = [types.Part.from_text(text=prompt_for(request))]
         for frame in request.frames[: request.policy.max_frames]:
             parts.append(types.Part.from_bytes(data=frame.data, mime_type=frame.mime_type))
 
