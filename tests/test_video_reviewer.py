@@ -283,7 +283,7 @@ def test_review_rows_approves_high_confidence(monkeypatch, tmp_path: Path) -> No
     monkeypatch.setattr("video_reviewer.ai_review.providers.gemini.GeminiProvider._sdk_installed", lambda self: True)
     monkeypatch.setattr(
         "video_reviewer.ai_review.providers.gemini.GeminiProvider._generate",
-        lambda self, key, model, request: {
+        lambda self, key, model, prompt, frames: {
             "description": "Sanding Metal Panel",
             "client_or_location": "GMR HQ",
             "is_manual": True,
@@ -313,7 +313,7 @@ def test_review_rows_flags_low_confidence_for_review(monkeypatch, tmp_path: Path
     monkeypatch.setattr("video_reviewer.ai_review.providers.gemini.GeminiProvider._sdk_installed", lambda self: True)
     monkeypatch.setattr(
         "video_reviewer.ai_review.providers.gemini.GeminiProvider._generate",
-        lambda self, key, model, request: {
+        lambda self, key, model, prompt, frames: {
             "description": "Sanding Metal Panel",
             "client_or_location": "Unknown",
             "confidence": 0.30,
@@ -335,7 +335,7 @@ def test_review_rows_blocks_invalid_field(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setattr("video_reviewer.ai_review.providers.gemini.GeminiProvider._sdk_installed", lambda self: True)
     monkeypatch.setattr(
         "video_reviewer.ai_review.providers.gemini.GeminiProvider._generate",
-        lambda self, key, model, request: {
+        lambda self, key, model, prompt, frames: {
             "description": "Bad_Description",  # underscore violates the SOP
             "client_or_location": "GMR HQ",
             "confidence": 0.95,
@@ -356,7 +356,7 @@ def test_review_rows_surfaces_api_error(monkeypatch, tmp_path: Path) -> None:
     manifest = _manifest_with_frame(tmp_path)
     monkeypatch.setattr("video_reviewer.ai_review.providers.gemini.GeminiProvider._sdk_installed", lambda self: True)
 
-    def boom(self, key, model, request):
+    def boom(self, key, model, prompt, frames):
         raise RuntimeError("429 rate limit")
 
     monkeypatch.setattr("video_reviewer.ai_review.providers.gemini.GeminiProvider._generate", boom)
@@ -802,7 +802,7 @@ def test_robot_footage_keeps_description_unprefixed(monkeypatch, tmp_path: Path)
     monkeypatch.setattr("video_reviewer.ai_review.providers.gemini.GeminiProvider._sdk_installed", lambda self: True)
     monkeypatch.setattr(
         "video_reviewer.ai_review.providers.gemini.GeminiProvider._generate",
-        lambda self, key, model, request: {
+        lambda self, key, model, prompt, frames: {
             "description": "Sanding Metal Panel",
             "client_or_location": "GMR HQ",
             "is_manual": False,

@@ -110,6 +110,15 @@ class VisionProviderBase:
         )
 
     def classify(self, request: ReviewRequest, config: ProviderConfig) -> ReviewResponse:
+        return parse_response(self.generate_json(
+            prompt_for(request),
+            request.frames[: request.policy.max_frames],
+            config,
+            max_retries=request.policy.max_retries,
+        ))
+
+    def generate_json(self, prompt: str, frames, config: ProviderConfig, max_retries: int = 1) -> dict[str, Any]:
+        """Send any prompt plus images and get parsed JSON back, with retries."""
         if not self._sdk_installed():
             raise AiReviewError(self.missing_sdk_message, ErrorCategory.MISSING_DEPENDENCY)
         key = self.resolve_api_key(config.api_key)
@@ -117,15 +126,15 @@ class VisionProviderBase:
             raise AiReviewError(self.key_message, ErrorCategory.MISSING_KEY)
         model = (config.model or "").strip() or self.default_model
         last_error: Exception | None = None
-        for attempt in range(max(1, request.policy.max_retries + 1)):
+        for attempt in range(max(1, max_retries + 1)):
             try:
-                return parse_response(self._generate(key, model, request))
+                return self._generate(key, model, prompt, frames)
             except AiReviewError:
                 raise
             except Exception as exc:  # SDK exception classes differ between versions.
                 last_error = exc
                 category = self._categorize_exception(exc)
-                if category not in {ErrorCategory.RATE_LIMIT, ErrorCategory.PROVIDER_UNAVAILABLE} or attempt == request.policy.max_retries:
+                if category not in {ErrorCategory.RATE_LIMIT, ErrorCategory.PROVIDER_UNAVAILABLE} or attempt == max_retries:
                     raise AiReviewError(self._safe_exception_message(category, exc), category) from exc
                 time.sleep(min(2**attempt, 4))
         raise AiReviewError(str(last_error or "Provider failed"), ErrorCategory.PROVIDER_UNAVAILABLE)

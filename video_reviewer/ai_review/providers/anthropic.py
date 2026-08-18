@@ -25,11 +25,11 @@ class AnthropicProvider(VisionProviderBase):
             return False
         return True
 
-    def _generate(self, api_key: str, model: str, request: ReviewRequest) -> dict:
+    def _generate(self, api_key: str, model: str, prompt: str, frames) -> dict:
         from anthropic import Anthropic
 
-        content = [{"type": "text", "text": prompt_for(request)}]
-        for frame in request.frames[: request.policy.max_frames]:
+        content = [{"type": "text", "text": prompt}]
+        for frame in frames:
             content.append({"type": "image", "source": {"type": "base64", "media_type": frame.mime_type, "data": base64.b64encode(frame.data).decode("ascii")}})
         response = Anthropic(api_key=api_key).messages.create(
             model=model, max_tokens=700, temperature=0.15,

@@ -25,11 +25,11 @@ class OpenAIProvider(VisionProviderBase):
             return False
         return True
 
-    def _generate(self, api_key: str, model: str, request: ReviewRequest) -> dict:
+    def _generate(self, api_key: str, model: str, prompt: str, frames) -> dict:
         from openai import OpenAI
 
-        content = [{"type": "text", "text": prompt_for(request)}]
-        for frame in request.frames[: request.policy.max_frames]:
+        content = [{"type": "text", "text": prompt}]
+        for frame in frames:
             encoded = base64.b64encode(frame.data).decode("ascii")
             content.append({"type": "image_url", "image_url": {"url": f"data:{frame.mime_type};base64,{encoded}"}})
         response = OpenAI(api_key=api_key).chat.completions.create(

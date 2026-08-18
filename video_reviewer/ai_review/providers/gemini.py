@@ -106,15 +106,29 @@ class GeminiProvider:
                 ErrorCategory.MISSING_KEY,
             )
         model = (config.model or "").strip() or self.default_model
-        payload = self._generate_with_retry(key, model, request)
+        from video_reviewer.ai_review.providers.common import prompt_for
+
+        payload = self._generate_with_retry(
+            key, model, prompt_for(request), request.frames[: request.policy.max_frames], request.policy.max_retries,
+        )
         return self._parse_response(payload)
 
-    def _generate_with_retry(self, api_key: str, model: str, request: ReviewRequest) -> dict[str, Any]:
+    def generate_json(self, prompt: str, frames, config: ProviderConfig, max_retries: int = 1) -> dict[str, Any]:
+        """Send any prompt plus images and get parsed JSON back, with retries."""
+        status = self.status(config)
+        if not status.available:
+            raise AiReviewError(status.message, ErrorCategory.MISSING_DEPENDENCY)
+        if not status.has_key:
+            raise AiReviewError(status.message, ErrorCategory.MISSING_KEY)
+        model = (config.model or "").strip() or self.default_model
+        return self._generate_with_retry(self.resolve_api_key(config.api_key), model, prompt, frames, max_retries)
+
+    def _generate_with_retry(self, api_key: str, model: str, prompt: str, frames, max_retries: int) -> dict[str, Any]:
         last_error: Exception | None = None
-        attempts = max(1, request.policy.max_retries + 1)
+        attempts = max(1, max_retries + 1)
         for attempt in range(attempts):
             try:
-                return self._generate(api_key, model, request)
+                return self._generate(api_key, model, prompt, frames)
             except AiReviewError:
                 raise
             except Exception as exc:  # noqa: BLE001 - SDK exceptions vary by version
@@ -125,14 +139,12 @@ class GeminiProvider:
                 time.sleep(min(2 ** attempt, 4))
         raise AiReviewError(str(last_error or "Provider failed"), ErrorCategory.PROVIDER_UNAVAILABLE)
 
-    def _generate(self, api_key: str, model: str, request: ReviewRequest) -> dict[str, Any]:
+    def _generate(self, api_key: str, model: str, prompt: str, frames) -> dict[str, Any]:
         from google import genai
         from google.genai import types
 
-        from video_reviewer.ai_review.providers.common import prompt_for
-
-        parts: list[Any] = [types.Part.from_text(text=prompt_for(request))]
-        for frame in request.frames[: request.policy.max_frames]:
+        parts: list[Any] = [types.Part.from_text(text=prompt)]
+        for frame in frames:
             parts.append(types.Part.from_bytes(data=frame.data, mime_type=frame.mime_type))
 
         client = genai.Client(api_key=api_key)
