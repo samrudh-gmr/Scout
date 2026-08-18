@@ -1,15 +1,15 @@
 from __future__ import annotations
 
-import logging
 import copy
+import logging
+import os
 import shutil
 import socket
 import subprocess
 import sys
 import threading
-from pathlib import Path
-
 from dataclasses import asdict
+from pathlib import Path
 
 from fastapi import FastAPI, Query
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
@@ -61,7 +61,18 @@ def _pick_directory_sync() -> subprocess.CompletedProcess[str]:
         command = ["osascript", "-e", 'POSIX path of (choose folder with prompt "Select folder")']
     else:
         raise OSError(f"no native folder picker is configured for {sys.platform}")
-    return subprocess.run(command, capture_output=True, text=True, timeout=60, check=False)
+    env = os.environ.copy()
+    # Desktop terminals installed through Snap/Flatpak can inject loader paths
+    # that make host-native pickers load incompatible libc/GTK libraries.
+    for name in (
+        "LD_LIBRARY_PATH",
+        "LD_PRELOAD",
+        "GTK_PATH",
+        "GIO_EXTRA_MODULES",
+        "GI_TYPELIB_PATH",
+    ):
+        env.pop(name, None)
+    return subprocess.run(command, capture_output=True, text=True, timeout=20, check=False, env=env)
 
 _AI_PAGE_HTML = """<!DOCTYPE html>
 <html lang="en">
@@ -102,6 +113,9 @@ _AI_PAGE_HTML = """<!DOCTYPE html>
   .meta { display:grid; gap:4px; }
   .name { font-weight:700; word-break:break-word; }
   .result { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:8px; font-size:.88rem; }
+  .folder-browser { margin-top:12px; padding:12px; border:1px solid #8884; border-radius:12px; }
+  .folder-list { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:7px; margin:10px 0; max-height:260px; overflow:auto; }
+  .folder-list button { text-align:left; background:#374151; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   details { margin-top:8px; } summary { cursor:pointer; }
 </style>
 </head>
@@ -129,9 +143,23 @@ _AI_PAGE_HTML = """<!DOCTYPE html>
         <input id="yearMonth" placeholder="optional, e.g. 2024-07" />
       </label>
       <button id="pickFolder" class="secondary">Choose folder</button>
+      <button id="browseFolder" class="secondary">Browse in app</button>
       <button id="prepareVideos">Prepare videos</button>
     </div>
     <p id="prepareStatus" class="muted">After preparation, rows will appear below.</p>
+    <div id="folderBrowser" class="folder-browser" hidden>
+      <div class="bar">
+        <label class="field">Current folder
+          <input id="browserPath" placeholder="Folder path" />
+        </label>
+        <button id="openBrowserPath" class="secondary">Open path</button>
+        <button id="browserUp" class="secondary">Up</button>
+        <button id="useBrowserFolder">Use this folder</button>
+        <button id="closeBrowser" class="secondary">Cancel</button>
+      </div>
+      <div id="folderList" class="folder-list"></div>
+      <p id="browserStatus" class="muted"></p>
+    </div>
   </section>
 
   <div class="bar">
@@ -172,9 +200,35 @@ async function pickFolder(){
   prepMsg('Opening folder picker…', 'muted');
   try { const response = await fetch('/api/pick-dir'); const res = await response.json();
     if(res.path){ $("inputDir").value = res.path; prepMsg('Folder selected. Click Prepare videos.', 'ok'); }
-    else if(res.cancelled) prepMsg('Folder picker cancelled. You can paste the folder path instead.', 'warn');
-    else prepMsg(res.error || 'Folder picker unavailable. Paste the folder path instead.', 'err');
-  } catch (error) { prepMsg('Could not reach the folder picker. Paste the folder path instead.', 'err'); }
+    else if(res.cancelled) prepMsg('Folder picker cancelled. You can use Browse in app instead.', 'warn');
+    else { prepMsg(res.error || 'Native folder picker unavailable. Use Browse in app instead.', 'err'); await showFolderBrowser(); }
+  } catch (error) { prepMsg('Native folder picker failed. Use Browse in app instead.', 'err'); await showFolderBrowser(); }
+}
+async function browseTo(path){
+  const status = $("browserStatus"); status.textContent = 'Loading folders…';
+  try {
+    const response = await fetch(`/api/browse-dir?path=${encodeURIComponent(path || '')}`);
+    const data = await response.json();
+    if(!response.ok){ status.textContent = data.error || 'Could not open this folder.'; return; }
+    $("browserPath").value = data.path;
+    $("browserUp").dataset.path = data.parent;
+    const list = $("folderList"); list.innerHTML = '';
+    for(const entry of data.dirs || []){
+      const button = document.createElement('button'); button.type = 'button'; button.className = 'secondary';
+      button.textContent = `📁 ${entry.name}`; button.title = entry.path; button.onclick = ()=>browseTo(entry.path);
+      list.appendChild(button);
+    }
+    status.textContent = data.dirs?.length ? 'Choose a folder or use the current folder.' : 'No subfolders here. You can use the current folder.';
+  } catch (error) { status.textContent = 'Could not load folders from the local app.'; }
+}
+async function showFolderBrowser(){
+  $("folderBrowser").hidden = false;
+  await browseTo($("inputDir").value.trim());
+}
+function useBrowserFolder(){
+  $("inputDir").value = $("browserPath").value;
+  $("folderBrowser").hidden = true;
+  prepMsg('Folder selected. Click Prepare videos.', 'ok');
 }
 async function prepareVideos(){
   const input = $("inputDir").value.trim();
@@ -233,7 +287,7 @@ function changeProvider(){
   $("apikey").value = '';
   loadStatus();
 }
-$("pickFolder").onclick=pickFolder; $("prepareVideos").onclick=prepareVideos; $("reviewSelected").onclick=()=>runReview(selectedIndices()); $("reviewAll").onclick=()=>runReview(Array.from(pending)); $("refresh").onclick=loadStatus; $("preset").onchange=updateEstimate; $("provider").onchange=changeProvider; $("apikey").oninput=updateReviewAvailability; loadStatus();
+$("pickFolder").onclick=pickFolder; $("browseFolder").onclick=showFolderBrowser; $("openBrowserPath").onclick=()=>browseTo($("browserPath").value); $("browserUp").onclick=()=>browseTo($("browserUp").dataset.path); $("useBrowserFolder").onclick=useBrowserFolder; $("closeBrowser").onclick=()=>{$("folderBrowser").hidden=true;}; $("prepareVideos").onclick=prepareVideos; $("reviewSelected").onclick=()=>runReview(selectedIndices()); $("reviewAll").onclick=()=>runReview(Array.from(pending)); $("refresh").onclick=loadStatus; $("preset").onchange=updateEstimate; $("provider").onchange=changeProvider; $("apikey").oninput=updateReviewAvailability; loadStatus();
 </script></body></html>"""
 
 # Backwards-compatible name for tests/imports that referenced the old page.
@@ -281,7 +335,34 @@ def create_app(manifest_path: Path) -> FastAPI:
         })
 
 
-    # ── /api/pick-dir ───────────────────────────────────────────────────────
+    # ── /api/browse-dir: cross-platform in-app fallback ─────────────────────
+    @app.get("/api/browse-dir")
+    async def api_browse_dir(path: str = Query(default="")) -> JSONResponse:
+        target = Path(path).expanduser() if path.strip() else Path.home()
+        try:
+            target = target.resolve(strict=True)
+        except (OSError, RuntimeError):
+            return JSONResponse({"error": "That folder does not exist or cannot be opened."}, status_code=404)
+        if not target.is_dir():
+            return JSONResponse({"error": "The selected path is not a folder."}, status_code=422)
+        try:
+            directories = sorted(
+                (
+                    entry for entry in target.iterdir()
+                    if entry.is_dir() and not entry.is_symlink() and not entry.name.startswith(".")
+                ),
+                key=lambda entry: entry.name.casefold(),
+            )
+        except (PermissionError, OSError):
+            return JSONResponse({"error": "Permission denied while opening that folder."}, status_code=403)
+        parent = target.parent if target.parent != target else target
+        return JSONResponse({
+            "path": str(target),
+            "parent": str(parent),
+            "dirs": [{"name": entry.name, "path": str(entry)} for entry in directories],
+        })
+
+    # ── /api/pick-dir: optional native desktop picker ────────────────────────
     @app.get("/api/pick-dir")
     async def api_pick_dir() -> JSONResponse:
         import anyio

@@ -9,7 +9,7 @@ Production-focused video reviewer and renamer for the GMR SOP. It prepares video
 - `uv` recommended, or `pip`
 - Optional: Claude Desktop for MCP review
 - Optional: Gemini, OpenAI, or Anthropic API key for API-key AI review
-- Linux GUI folder picker: `zenity` (the UI falls back to a pasteable path if unavailable)
+- Native folder picker: Zenity on Linux, AppleScript on macOS, and PowerShell/.NET on Windows
 
 ## Installation
 
@@ -35,6 +35,8 @@ Then open the local app and use the guided flow:
 6. Preview renames, then apply.
 
 The GUI defaults to `~/.video-renamer/manifest.csv`, so nontechnical users do not need to pass a manifest path. Advanced users can still launch a specific manifest with `video-renamer gui --manifest manifest.csv`.
+
+Folder selection is cross-platform. **Choose folder** uses the native desktop dialog when available. **Browse in app** is an always-available fallback that does not depend on Zenity, AppleScript, or PowerShell successfully opening a dialog.
 
 ## Prepare
 

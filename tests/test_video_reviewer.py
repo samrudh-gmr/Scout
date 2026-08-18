@@ -659,3 +659,86 @@ def test_accurate_preset_keeps_conservative_approval_threshold() -> None:
     from video_reviewer.ai_review.models import ReviewPolicy
 
     assert ReviewPolicy.from_preset("accurate").confidence_threshold >= ReviewPolicy.from_preset("balanced").confidence_threshold
+
+
+
+def test_native_picker_sanitizes_snap_loader_environment(monkeypatch) -> None:
+    from video_reviewer.gui import _pick_directory_sync
+
+    captured = {}
+
+    def fake_run(*args, **kwargs):
+        captured.update(kwargs)
+        class Completed:
+            returncode = 1
+            stdout = ""
+            stderr = ""
+        return Completed()
+
+    monkeypatch.setattr("video_reviewer.gui.sys.platform", "linux")
+    monkeypatch.setattr("video_reviewer.gui.shutil.which", lambda name: "/usr/bin/zenity")
+    monkeypatch.setenv("LD_LIBRARY_PATH", "/snap/core20/current/lib/x86_64-linux-gnu")
+    monkeypatch.setenv("GIO_EXTRA_MODULES", "/snap/core20/modules")
+    monkeypatch.setattr("video_reviewer.gui.subprocess.run", fake_run)
+
+    _pick_directory_sync()
+
+    assert "LD_LIBRARY_PATH" not in captured["env"]
+    assert "GIO_EXTRA_MODULES" not in captured["env"]
+    assert captured["timeout"] == 20
+
+
+def test_in_app_folder_browser_lists_directories_cross_platform(tmp_path: Path) -> None:
+    from fastapi.testclient import TestClient
+    from video_reviewer.gui import create_app
+
+    (tmp_path / "Videos").mkdir()
+    (tmp_path / "Other").mkdir()
+    (tmp_path / ".hidden").mkdir()
+    manifest = tmp_path / "manifest.csv"
+    write_manifest_csv(manifest, [])
+
+    response = TestClient(create_app(manifest)).get("/api/browse-dir", params={"path": str(tmp_path)})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["path"] == str(tmp_path.resolve())
+    assert [item["name"] for item in payload["dirs"]] == ["Other", "Videos"]
+    assert all(Path(item["path"]).is_absolute() for item in payload["dirs"])
+
+
+def test_in_app_folder_browser_rejects_missing_path(tmp_path: Path) -> None:
+    from fastapi.testclient import TestClient
+    from video_reviewer.gui import create_app
+
+    manifest = tmp_path / "manifest.csv"
+    write_manifest_csv(manifest, [])
+    response = TestClient(create_app(manifest)).get(
+        "/api/browse-dir", params={"path": str(tmp_path / "missing")}
+    )
+    assert response.status_code == 404
+
+
+
+def test_native_picker_uses_platform_commands(monkeypatch) -> None:
+    from video_reviewer.gui import _pick_directory_sync
+
+    commands = []
+
+    def fake_run(command, **kwargs):
+        commands.append(command)
+        class Completed:
+            returncode = 1
+            stdout = ""
+            stderr = ""
+        return Completed()
+
+    monkeypatch.setattr("video_reviewer.gui.subprocess.run", fake_run)
+
+    monkeypatch.setattr("video_reviewer.gui.sys.platform", "darwin")
+    _pick_directory_sync()
+    assert commands[-1][0] == "osascript"
+
+    monkeypatch.setattr("video_reviewer.gui.sys.platform", "win32")
+    _pick_directory_sync()
+    assert commands[-1][:3] == ["powershell", "-NoProfile", "-Command"]
