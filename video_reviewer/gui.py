@@ -436,6 +436,7 @@ def create_app(manifest_path: Path) -> FastAPI:
         model = (body.get("model") or "").strip() or None
         api_key = (body.get("api_key") or "").strip() or load_api_key(provider) or None
         messages = body.get("messages")
+        frame_notes = str(body.get("frame_notes") or "").strip()
         try:
             index = int(body.get("index"))
         except (TypeError, ValueError):
@@ -448,6 +449,7 @@ def create_app(manifest_path: Path) -> FastAPI:
                 lambda: chat_about_row(
                     manifest_path, index, messages,
                     provider_id=provider, model=model, api_key=api_key,
+                    frame_notes=frame_notes,
                 )
             )
         except AiReviewError as exc:
@@ -460,6 +462,8 @@ def create_app(manifest_path: Path) -> FastAPI:
             "message": reply.message,
             "set_fields": reply.set_fields,
             "remembered": reply.remembered,
+            "frame_notes": reply.frame_notes,
+            "need_frames": reply.need_frames,
         })
 
     # ── legacy page routes ──────────────────────────────────────────────────

@@ -33,6 +33,9 @@ export function chatPanel({ onFields, onRemembered }) {
   let messages = [];
   let forIndex = state.selected;
   let busyNow = false;
+  // What the model saw on the first turn. Holding it here is what lets every
+  // later turn skip the images — the provider APIs remember nothing themselves.
+  let frameNotes = "";
 
   function bubble(role, text, extras = []) {
     return add(el(`div.msg.${role}`, null, el("div.who", null, role === "user" ? "You" : "Assistant"),
@@ -79,11 +82,21 @@ export function chatPanel({ onFields, onRemembered }) {
     redraw();
 
     try {
-      const reply = await api.aiChat({
-        index: forIndex,
-        messages: messages.map(({ role, content }) => ({ role, content })),
-        provider: state.provider,
-      });
+      const ask = (notes) =>
+        api.aiChat({
+          index: forIndex,
+          messages: messages.map(({ role, content }) => ({ role, content })),
+          provider: state.provider,
+          frame_notes: notes,
+        });
+
+      let reply = await ask(frameNotes);
+      if (reply.need_frames) {
+        // The notes could not answer it — show the frames once more, then carry
+        // on from the fresher notes. One retry only.
+        reply = await ask("");
+      }
+      if (reply.frame_notes) frameNotes = reply.frame_notes;
 
       const extras = [];
       const fields = reply.set_fields || {};
@@ -128,6 +141,7 @@ export function chatPanel({ onFields, onRemembered }) {
   panel.resetFor = (index) => {
     forIndex = index;
     messages = [];
+    frameNotes = "";
     busyNow = false;
     redraw();
   };

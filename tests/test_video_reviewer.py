@@ -940,3 +940,61 @@ def test_chat_rejects_an_empty_question(tmp_path: Path) -> None:
         assert "Ask a question" in str(exc)
     else:
         raise AssertionError("Expected an empty question to be rejected")
+
+
+def _chat_spy(monkeypatch, payload):
+    """Stub the SDK and capture what each call was actually given."""
+    calls = []
+    monkeypatch.setattr("video_reviewer.ai_review.providers.gemini.GeminiProvider._sdk_installed", lambda self: True)
+
+    def generate(self, key, model, prompt, frames):
+        calls.append({"prompt": prompt, "frames": len(frames)})
+        return payload(len(calls))
+
+    monkeypatch.setattr("video_reviewer.ai_review.providers.gemini.GeminiProvider._generate", generate)
+    return calls
+
+
+def test_chat_sends_frames_once_and_reuses_its_notes(tmp_path: Path, monkeypatch) -> None:
+    """Images cross the wire on the first turn only; later turns carry the notes."""
+    from video_reviewer.ai_review.chat import chat_about_row
+
+    manifest = _chat_manifest(tmp_path)
+    calls = _chat_spy(monkeypatch, lambda n: {
+        "message": f"answer {n}",
+        "set_fields": None,
+        "remember": None,
+        "frame_notes": "A robot sanding a metal enclosure." if n == 1 else None,
+    })
+
+    first = chat_about_row(manifest, 0, [{"role": "user", "content": "what is this?"}], api_key="k")
+    assert calls[0]["frames"] > 0
+    assert first.frame_notes == "A robot sanding a metal enclosure."
+
+    second = chat_about_row(
+        manifest, 0,
+        [{"role": "user", "content": "what is this?"}, {"role": "assistant", "content": "answer 1"},
+         {"role": "user", "content": "shorter please"}],
+        api_key="k", frame_notes=first.frame_notes,
+    )
+    assert calls[1]["frames"] == 0, "the second turn must not re-send the images"
+    assert "A robot sanding a metal enclosure." in calls[1]["prompt"]
+    # The notes carry forward even when the model does not restate them.
+    assert second.frame_notes == first.frame_notes
+
+
+def test_chat_asks_for_frames_back_when_its_notes_fall_short(tmp_path: Path, monkeypatch) -> None:
+    from video_reviewer.ai_review.chat import chat_about_row
+
+    manifest = _chat_manifest(tmp_path)
+    _chat_spy(monkeypatch, lambda n: {
+        "message": "I cannot tell from my notes.",
+        "set_fields": None, "remember": None, "need_frames": True,
+    })
+
+    # With notes in hand the model may ask to look again...
+    assert chat_about_row(manifest, 0, [{"role": "user", "content": "what colour?"}],
+                          api_key="k", frame_notes="Some notes.").need_frames is True
+    # ...but on a turn that already carried the frames the flag is meaningless.
+    assert chat_about_row(manifest, 0, [{"role": "user", "content": "what colour?"}],
+                          api_key="k").need_frames is False
