@@ -380,6 +380,9 @@ def test_review_rows_requires_api_key(monkeypatch, tmp_path: Path) -> None:
 
 
 def test_build_proposed_name() -> None:
+    from video_reviewer.sop import VIDEO_EXTENSIONS
+
+    assert ".webm" in VIDEO_EXTENSIONS
     row = ManifestRow(
         source_path="/tmp/demo.mov",
         year_month="2024-07",

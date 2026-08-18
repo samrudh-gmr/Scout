@@ -6,7 +6,7 @@ from pathlib import Path
 from video_reviewer.manifest import REVIEW_APPLIED, REVIEW_APPROVED, ManifestRow
 
 
-VIDEO_EXTENSIONS = {".mov", ".mp4", ".m4v", ".avi", ".mkv", ".mts", ".mxf"}
+VIDEO_EXTENSIONS = {".mov", ".mp4", ".m4v", ".avi", ".mkv", ".mts", ".mxf", ".webm"}
 INVALID_FILENAME_CHARS = set('/\\:*?"<>|')
 
 
