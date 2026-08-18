@@ -36,9 +36,9 @@ Respond with ONLY a JSON object with exactly these keys: description, client_or_
 class GeminiProvider:
     provider_id = "gemini"
     display_name = "Gemini API"
-    default_model = "gemini-2.5-flash"
-    cheap_model = "gemini-2.5-flash"
-    accurate_model = "gemini-2.5-pro"
+    default_model = "gemini-3.7-flash"
+    cheap_model = "gemini-3.5-flash-lite"
+    accurate_model = "gemini-3.7-flash"
     env_key_names = ("GEMINI_API_KEY", "GOOGLE_API_KEY")
 
     def _sdk_installed(self) -> bool:
