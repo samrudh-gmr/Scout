@@ -7,6 +7,10 @@ from video_reviewer.manifest import REVIEW_PENDING, write_manifest_csv
 from video_reviewer.workflow import apply_manifest, build_prepare_manifest
 
 
+def default_manifest_path() -> Path:
+    return Path.home() / ".video-renamer" / "manifest.csv"
+
+
 def command_prepare(args: argparse.Namespace) -> int:
     rows = build_prepare_manifest(
         input_dir=Path(args.input).resolve(),
@@ -102,8 +106,9 @@ def command_gemini_review(args: argparse.Namespace) -> int:
 def command_gui(args: argparse.Namespace) -> int:
     from video_reviewer.gui import launch_gui
 
+    manifest_path = Path(args.manifest).resolve() if args.manifest else default_manifest_path()
     launch_gui(
-        manifest_path=Path(args.manifest).resolve(),
+        manifest_path=manifest_path,
         host=args.host,
         port=args.port,
     )
@@ -171,7 +176,11 @@ def build_parser() -> argparse.ArgumentParser:
     gemini_parser.set_defaults(func=command_gemini_review)
 
     gui_parser = subparsers.add_parser("gui", help="Launch local web GUI for interactive review.")
-    gui_parser.add_argument("--manifest", required=True, help="CSV manifest path to review")
+    gui_parser.add_argument(
+        "--manifest",
+        default="",
+        help="CSV manifest path to review. Optional for GUI; defaults to ~/.video-renamer/manifest.csv",
+    )
     gui_parser.add_argument("--host", default="127.0.0.1", help="Host to bind")
     gui_parser.add_argument("--port", type=int, default=8765, help="Port to bind")
     gui_parser.set_defaults(func=command_gui)

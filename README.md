@@ -21,18 +21,19 @@ pip install .
 ## Recommended nontechnical workflow
 
 ```bash
-video-renamer prepare --input /path/to/videos --manifest manifest.csv
-video-renamer gui --manifest manifest.csv
+video-renamer gui
 ```
 
 Then open the local app and use the guided flow:
 
-1. Prepare videos / confirm rows.
-2. Open **AI Review** at `http://127.0.0.1:8765/ai-review`.
+1. Click **Choose folder** and select the video folder.
+2. Click **Prepare videos** to create the manifest and sample frames.
 3. Paste a provider API key or set the provider env var.
 4. Pick a cost/accuracy preset.
 5. Review uncertain rows manually.
 6. Preview renames, then apply.
+
+The GUI defaults to `~/.video-renamer/manifest.csv`, so nontechnical users do not need to pass a manifest path. Advanced users can still launch a specific manifest with `video-renamer gui --manifest manifest.csv`.
 
 ## Prepare
 

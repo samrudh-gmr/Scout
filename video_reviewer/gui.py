@@ -76,6 +76,22 @@ _AI_PAGE_HTML = """<!DOCTYPE html>
 
   <div id="status">Checking AI provider…</div>
 
+  <section class="card">
+    <h2>Choose videos</h2>
+    <p class="muted">No terminal path arguments needed. Pick a folder, then prepare will create the manifest and sample frames for this session.</p>
+    <div class="bar">
+      <label class="field">Video folder
+        <input id="inputDir" placeholder="/path/to/videos" />
+      </label>
+      <label class="field">Year-month override
+        <input id="yearMonth" placeholder="optional, e.g. 2024-07" />
+      </label>
+      <button id="pickFolder" class="secondary">Choose folder</button>
+      <button id="prepareVideos">Prepare videos</button>
+    </div>
+    <p id="prepareStatus" class="muted">After preparation, rows will appear below.</p>
+  </section>
+
   <div class="bar">
     <label class="field">Provider
       <select id="provider"><option value="gemini">Gemini API</option></select>
@@ -103,6 +119,25 @@ function statusMsg(text, cls){ const el=$("status"); el.textContent=text; el.cla
 function selectedIndices(){ return Array.from(document.querySelectorAll(".rowcheck:checked")).map(c=>Number(c.value)); }
 function presetFrames(){ return {fast:6, balanced:12, accurate:16}[$("preset").value] || 12; }
 function updateEstimate(){ const n = pending.size; const f = presetFrames(); const total=n*f; const tier= total<=60?'low':total<=250?'medium':'high'; $("estimate").textContent = `${n} pending video(s) × up to ${f} frames = up to ${total} images (${tier} cost tier).`; }
+function prepMsg(text, cls){ const el=$("prepareStatus"); el.textContent=text; el.className=cls||"muted"; }
+async function pickFolder(){
+  prepMsg('Opening folder picker…', 'muted');
+  const res = await fetch('/api/pick-dir').then(r=>r.json());
+  if(res.path){ $("inputDir").value = res.path; prepMsg('Folder selected. Click Prepare videos.', 'ok'); }
+  else prepMsg('Folder picker was cancelled or unavailable. You can paste the folder path instead.', 'warn');
+}
+async function prepareVideos(){
+  const input = $("inputDir").value.trim();
+  if(!input){ prepMsg('Choose or paste a video folder first.', 'err'); return; }
+  const base = input.replace(/\/$/, '');
+  prepMsg('Preparing videos… this can take a few minutes for large files.', 'warn');
+  $("prepareVideos").disabled = true;
+  const res = await fetch('/api/run-prepare', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({input_dir:input, year_month:$("yearMonth").value.trim(), tmp_dir:`${base}/.video-renamer-tmp`, sample_count:0, proxy_scale:1280})}).then(r=>r.json());
+  $("prepareVideos").disabled = false;
+  if(res.error){ prepMsg(res.error, 'err'); return; }
+  prepMsg(res.message || 'Prepared videos.', 'ok');
+  await loadStatus();
+}
 async function loadStatus(){
   const provider=$("provider").value;
   const [statusRes, rowsRes] = await Promise.all([
@@ -133,7 +168,7 @@ async function reviewOne(index){
   return r;
 }
 async function runReview(indices){ if(!indices.length){statusMsg('No pending rows selected.', 'err'); return;} $("reviewSelected").disabled=true; $("reviewAll").disabled=true; let approved=0; for(let i=0;i<indices.length;i++){ statusMsg(`Reviewing ${i+1} / ${indices.length}…`, ''); const r=await reviewOne(indices[i]); if(r.ok) approved++; } statusMsg(`Done — ${approved}/${indices.length} ready to rename. Review the rest manually.`, approved===indices.length?'ok':'warn'); await loadStatus(); }
-$("reviewSelected").onclick=()=>runReview(selectedIndices()); $("reviewAll").onclick=()=>runReview(Array.from(pending)); $("refresh").onclick=loadStatus; $("preset").onchange=updateEstimate; $("provider").onchange=loadStatus; loadStatus();
+$("pickFolder").onclick=pickFolder; $("prepareVideos").onclick=prepareVideos; $("reviewSelected").onclick=()=>runReview(selectedIndices()); $("reviewAll").onclick=()=>runReview(Array.from(pending)); $("refresh").onclick=loadStatus; $("preset").onchange=updateEstimate; $("provider").onchange=loadStatus; loadStatus();
 </script></body></html>"""
 
 # Backwards-compatible name for tests/imports that referenced the old page.
@@ -141,6 +176,8 @@ _GEMINI_PAGE_HTML = _AI_PAGE_HTML
 
 
 def create_app(manifest_path: Path) -> FastAPI:
+    if not manifest_path.exists():
+        write_manifest_csv(manifest_path, [])
     app = FastAPI()
 
     # ── /api/rows ──────────────────────────────────────────────────────────
