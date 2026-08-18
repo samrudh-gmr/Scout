@@ -12,7 +12,7 @@ from dataclasses import asdict
 from pathlib import Path
 
 from fastapi import FastAPI, Query
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from video_reviewer.config import api_key_hint, delete_api_key, load_api_key, save_api_key, save_correction
@@ -73,226 +73,6 @@ def _pick_directory_sync() -> subprocess.CompletedProcess[str]:
     ):
         env.pop(name, None)
     return subprocess.run(command, capture_output=True, text=True, timeout=20, check=False, env=env)
-
-_AI_PAGE_HTML = """<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>AI Review — Video Renamer</title>
-<style>
-  :root { color-scheme: light dark; --accent:#4f46e5; --ok:#16a34a; --warn:#d97706; --err:#dc2626; }
-  body { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif; margin:0; background:Canvas; color:CanvasText; }
-  main { max-width:1180px; margin:0 auto; padding:28px; }
-  h1 { font-size:1.75rem; margin:0 0 6px; }
-  h2 { font-size:1.05rem; margin:0 0 10px; }
-  .sub { opacity:.72; margin:0 0 22px; }
-  .cards { display:grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap:14px; margin-bottom:18px; }
-  .card { border:1px solid #8884; border-radius:16px; padding:16px; background:color-mix(in srgb, Canvas 92%, CanvasText 8%); }
-  .steps { display:flex; flex-wrap:wrap; gap:8px; margin:14px 0 22px; }
-  .step { border:1px solid #8884; border-radius:999px; padding:6px 10px; font-size:.85rem; opacity:.78; }
-  .step.active { background:var(--accent); color:white; opacity:1; border-color:var(--accent); }
-  .bar { display:flex; flex-wrap:wrap; gap:12px; align-items:end; margin:14px 0; }
-  .field { display:flex; flex-direction:column; gap:5px; font-size:.82rem; font-weight:600; }
-  input, select { padding:9px 10px; border:1px solid #8885; border-radius:9px; font:inherit; min-width:190px; background:Canvas; color:CanvasText; }
-  button { padding:10px 15px; border:0; border-radius:10px; background:var(--accent); color:#fff; font:inherit; font-weight:650; cursor:pointer; }
-  button.secondary { background:#6b7280; } button:disabled { opacity:.5; cursor:not-allowed; }
-  #status { margin:12px 0 16px; padding:12px 14px; border:1px solid #8884; border-radius:12px; }
-  .err { color:var(--err); } .ok { color:var(--ok); } .warn { color:var(--warn); } .muted { opacity:.68; }
-  .privacy { font-size:.88rem; line-height:1.4; }
-  .pill { display:inline-block; padding:2px 8px; border-radius:999px; font-size:.75rem; font-weight:650; }
-  .pill.pending { background:#f59e0b33; } .pill.approved { background:#16a34a33; }
-  .pill.needs_review { background:#f59e0b55; } .pill.blocked,.pill.missing { background:#dc262633; }
-  .pill.working { background:#4f46e533; }
-  .grid { display:grid; gap:12px; }
-  .row { display:grid; grid-template-columns:auto 1fr; gap:12px; border:1px solid #8883; border-radius:14px; padding:12px; align-items:start; }
-  .rowbody { display:grid; gap:8px; min-width:0; }
-  .rowhead { display:flex; flex-wrap:wrap; align-items:center; gap:8px; }
-  .thumbs { display:flex; flex-wrap:wrap; gap:6px; }
-  .thumbs img { width:72px; height:48px; object-fit:cover; border-radius:8px; border:1px solid #8884; }
-  .meta { display:grid; gap:4px; }
-  .name { font-weight:700; word-break:break-word; }
-  .result { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:8px; font-size:.88rem; }
-  .folder-browser { margin-top:12px; padding:12px; border:1px solid #8884; border-radius:12px; }
-  .folder-list { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:7px; margin:10px 0; max-height:260px; overflow:auto; }
-  .folder-list button { text-align:left; background:#374151; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  details { margin-top:8px; } summary { cursor:pointer; }
-</style>
-</head>
-<body><main>
-  <h1>AI Review</h1>
-  <p class="sub">Guided review for nontechnical users: prepare videos, send representative frames to an API provider, confirm uncertain rows, preview, then rename.</p>
-  <div class="steps"><span class="step active">1 AI setup</span><span class="step">2 choose videos</span><span class="step">3 review uncertain</span><span class="step">4 preview/apply in main app</span></div>
-
-  <div class="cards">
-    <section class="card"><h2>Provider</h2><p class="muted">Choose a vision provider. Keys are used for the request only and never written to the manifest.</p><div id="providers"></div></section>
-    <section class="card privacy"><h2>Privacy + cost</h2><p>External API review sends only sampled frames and metadata for selected rows. API keys are used for the request only and are not written to the manifest.</p><p id="estimate" class="muted">Choose a preset to see the frame budget.</p></section>
-    <section class="card"><h2>Recommended defaults</h2><p class="muted">Use <b>Balanced</b> first. It keeps full-resolution sampled frames, limits frames per video, and sends uncertain rows to manual review instead of guessing.</p></section>
-  </div>
-
-  <div id="status">Checking AI provider…</div>
-
-  <section class="card">
-    <h2>Choose videos</h2>
-    <p class="muted">No terminal path arguments needed. Pick a folder, then prepare will create the manifest and sample frames for this session.</p>
-    <div class="bar">
-      <label class="field">Video folder
-        <input id="inputDir" placeholder="/path/to/videos" />
-      </label>
-      <label class="field">Year-month override
-        <input id="yearMonth" placeholder="optional, e.g. 2024-07" />
-      </label>
-      <button id="pickFolder" class="secondary">Choose folder</button>
-      <button id="browseFolder" class="secondary">Browse in app</button>
-      <button id="prepareVideos">Prepare videos</button>
-    </div>
-    <p id="prepareStatus" class="muted">After preparation, rows will appear below.</p>
-    <div id="folderBrowser" class="folder-browser" hidden>
-      <div class="bar">
-        <label class="field">Current folder
-          <input id="browserPath" placeholder="Folder path" />
-        </label>
-        <button id="openBrowserPath" class="secondary">Open path</button>
-        <button id="browserUp" class="secondary">Up</button>
-        <button id="useBrowserFolder">Use this folder</button>
-        <button id="closeBrowser" class="secondary">Cancel</button>
-      </div>
-      <div id="folderList" class="folder-list"></div>
-      <p id="browserStatus" class="muted"></p>
-    </div>
-  </section>
-
-  <div class="bar">
-    <label class="field">Provider
-      <select id="provider"></select>
-    </label>
-    <label class="field">API key
-      <input id="apikey" type="password" placeholder="paste key, or set GEMINI_API_KEY" autocomplete="off" />
-    </label>
-    <label class="field">Preset
-      <select id="preset"><option value="fast">Fast / cheapest</option><option value="balanced" selected>Balanced</option><option value="accurate">Most accurate</option></select>
-    </label>
-    <details><summary>Advanced</summary><label class="field">Model override<input id="model" placeholder="provider default" /></label></details>
-    <button id="reviewSelected">Review selected</button>
-    <button id="reviewAll" class="secondary">Review all pending</button>
-    <button id="refresh" class="secondary">Refresh</button>
-  </div>
-
-  <div class="grid" id="rows"></div>
-</main>
-<script>
-const $ = (id) => document.getElementById(id);
-let pending = new Set(); let allRows = []; let providerNeedsKey = true; let providerAvailable = false;
-function esc(s){ return String(s||"").replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
-function pill(status){ const cls=["pending","approved","needs_review","blocked","missing","working"].includes(status)?status:"muted"; return `<span class="pill ${cls}">${esc(status)}</span>`; }
-function statusMsg(text, cls){ const el=$("status"); el.textContent=text; el.className=cls||""; }
-function selectedIndices(){ return Array.from(document.querySelectorAll(".rowcheck:checked")).map(c=>Number(c.value)); }
-function presetFrames(){ return {fast:6, balanced:12, accurate:16}[$("preset").value] || 12; }
-function updateEstimate(){ const n = pending.size; const f = presetFrames(); const total=n*f; const tier= total<=60?'low':total<=250?'medium':'high'; $("estimate").textContent = `${n} pending video(s) × up to ${f} frames = up to ${total} images (${tier} cost tier).`; }
-function updateReviewAvailability(){
-  const hasKey = !providerNeedsKey || $("apikey").value.trim().length > 0;
-  const enabled = providerAvailable && pending.size > 0 && hasKey;
-  $("reviewSelected").disabled = !enabled;
-  $("reviewAll").disabled = !enabled;
-}
-function prepMsg(text, cls){ const el=$("prepareStatus"); el.textContent=text; el.className=cls||"muted"; }
-async function pickFolder(){
-  prepMsg('Opening folder picker…', 'muted');
-  try { const response = await fetch('/api/pick-dir'); const res = await response.json();
-    if(res.path){ $("inputDir").value = res.path; prepMsg('Folder selected. Click Prepare videos.', 'ok'); }
-    else if(res.cancelled) prepMsg('Folder picker cancelled. You can use Browse in app instead.', 'warn');
-    else { prepMsg(res.error || 'Native folder picker unavailable. Use Browse in app instead.', 'err'); await showFolderBrowser(); }
-  } catch (error) { prepMsg('Native folder picker failed. Use Browse in app instead.', 'err'); await showFolderBrowser(); }
-}
-async function browseTo(path){
-  const status = $("browserStatus"); status.textContent = 'Loading folders…';
-  try {
-    const response = await fetch(`/api/browse-dir?path=${encodeURIComponent(path || '')}`);
-    const data = await response.json();
-    if(!response.ok){ status.textContent = data.error || 'Could not open this folder.'; return; }
-    $("browserPath").value = data.path;
-    $("browserUp").dataset.path = data.parent;
-    const list = $("folderList"); list.innerHTML = '';
-    for(const entry of data.dirs || []){
-      const button = document.createElement('button'); button.type = 'button'; button.className = 'secondary';
-      button.textContent = `📁 ${entry.name}`; button.title = entry.path; button.onclick = ()=>browseTo(entry.path);
-      list.appendChild(button);
-    }
-    status.textContent = data.dirs?.length ? 'Choose a folder or use the current folder.' : 'No subfolders here. You can use the current folder.';
-  } catch (error) { status.textContent = 'Could not load folders from the local app.'; }
-}
-async function showFolderBrowser(){
-  $("folderBrowser").hidden = false;
-  await browseTo($("inputDir").value.trim());
-}
-function useBrowserFolder(){
-  $("inputDir").value = $("browserPath").value;
-  $("folderBrowser").hidden = true;
-  prepMsg('Folder selected. Click Prepare videos.', 'ok');
-}
-async function prepareVideos(){
-  const input = $("inputDir").value.trim();
-  if(!input){ prepMsg('Choose or paste a video folder first.', 'err'); return; }
-  const base = input.endsWith('/') ? input.slice(0, -1) : input;
-  prepMsg('Preparing videos… this can take a few minutes for large files.', 'warn');
-  $("prepareVideos").disabled = true;
-  try {
-    const response = await fetch('/api/run-prepare', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({input_dir:input, year_month:$("yearMonth").value.trim(), tmp_dir:`${base}/.video-renamer-tmp`, sample_count:0, proxy_scale:1280})});
-    const res = await response.json();
-    if(res.error){ prepMsg(res.error, 'err'); return; }
-    prepMsg(res.message || 'Prepared videos.', 'ok');
-    await loadStatus();
-  } catch (error) {
-    prepMsg('Preparation failed or the server became unavailable. Your existing batch was left unchanged.', 'err');
-  } finally {
-    $("prepareVideos").disabled = false;
-  }
-}
-async function loadStatus(){
-  const provider=$("provider").value;
-  const [statusRes, rowsRes] = await Promise.all([
-    fetch(`/api/ai/status?provider=${encodeURIComponent(provider)}`).then(r=>r.json()),
-    fetch("/api/rows").then(r=>r.json()),
-  ]);
-  pending = new Set(statusRes.pending || []); allRows = rowsRes.rows || [];
-  providerAvailable = Boolean(statusRes.available);
-  providerNeedsKey = Boolean(statusRes.needs_key);
-  const providerOptions = statusRes.providers || [];
-  const select = $("provider"); const current = provider;
-  select.innerHTML = providerOptions.map(p=>`<option value="${esc(p.id)}">${esc(p.display_name)}</option>`).join("");
-  if(providerOptions.some(p=>p.id===current)) select.value = current;
-  $("providers").innerHTML = providerOptions.map(p=>`<div>${esc(p.display_name)} <span class="muted">default ${esc(p.default_model)} · key ${esc((p.env_key_names||[]).join(' or '))}</span></div>`).join("");
-  $("apikey").placeholder = statusRes.env_key_names?.length ? `paste key, or set ${statusRes.env_key_names.join(' / ')}` : 'paste provider API key';
-  if(!statusRes.available) statusMsg(statusRes.message, "err");
-  else if(statusRes.needs_key) statusMsg(statusRes.message, "warn");
-  else statusMsg(`${statusRes.display_name || 'AI provider'} ready — ${pending.size} video(s) pending.`, "ok");
-  updateEstimate(); updateReviewAvailability(); renderRows(allRows);
-}
-function renderRows(rows){ const host=$("rows"); host.innerHTML=""; for(const row of rows){
-  const checkable = pending.has(row.index);
-  const frames = (row.frames || []).slice(0,4).map((_,i)=>`<img alt="frame ${i+1}" src="/api/frame/${row.index}/${i}" loading="lazy"/>`).join("");
-  const div=document.createElement("div"); div.className="row"; div.dataset.index=row.index;
-  div.innerHTML = `<div>${checkable?`<input type="checkbox" class="rowcheck" value="${row.index}"/>`:""}</div><div class="rowbody"><div class="rowhead"><span class="name">${esc(row.source_name)}</span><span class="cell-status">${pill(row.review_status)}</span></div><div class="thumbs">${frames}</div><div class="meta"><div class="result"><div><b>Description</b><br><span class="cell-desc">${esc(row.description)}</span></div><div><b>Client / location</b><br><span class="cell-client">${esc(row.client_or_location)}</span></div><div><b>Proposed name</b><br><span class="cell-proposed">${esc(row.proposed_name)}</span></div></div><div class="cell-note muted">${esc(row.ai_rationale || '')}</div></div></div>`;
-  host.appendChild(div);
-}}
-async function reviewOne(index){
-  const div=document.querySelector(`.row[data-index="${index}"]`); if(div) div.querySelector('.cell-status').innerHTML=pill('working');
-  const res = await fetch('/api/ai/review', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({indices:[index], provider:$("provider").value, model:$("model").value, api_key:$("apikey").value, preset:$("preset").value})}).then(r=>r.json());
-  if(res.error){ if(div){ div.querySelector('.cell-status').innerHTML=pill('blocked'); div.querySelector('.cell-note').innerHTML=`<span class="err">${esc(res.error)}</span>`; } return {ok:false,error:res.error}; }
-  const r=(res.results||[])[0]||{}; if(div){ div.querySelector('.cell-status').innerHTML=pill(r.status||''); div.querySelector('.cell-desc').textContent=r.description||''; div.querySelector('.cell-client').textContent=r.client_or_location||''; div.querySelector('.cell-proposed').textContent=r.proposed_name||''; div.querySelector('.cell-note').textContent=r.error || r.response || ''; }
-  return r;
-}
-async function runReview(indices){ if(!indices.length){statusMsg('No pending rows selected.', 'err'); return;} $("reviewSelected").disabled=true; $("reviewAll").disabled=true; let approved=0; for(let i=0;i<indices.length;i++){ statusMsg(`Reviewing ${i+1} / ${indices.length}…`, ''); const r=await reviewOne(indices[i]); if(r.ok) approved++; } statusMsg(`Done — ${approved}/${indices.length} ready to rename. Review the rest manually.`, approved===indices.length?'ok':'warn'); await loadStatus(); }
-function changeProvider(){
-  $("apikey").value = '';
-  loadStatus();
-}
-$("pickFolder").onclick=pickFolder; $("browseFolder").onclick=showFolderBrowser; $("openBrowserPath").onclick=()=>browseTo($("browserPath").value); $("browserUp").onclick=()=>browseTo($("browserUp").dataset.path); $("useBrowserFolder").onclick=useBrowserFolder; $("closeBrowser").onclick=()=>{$("folderBrowser").hidden=true;}; $("prepareVideos").onclick=prepareVideos; $("reviewSelected").onclick=()=>runReview(selectedIndices()); $("reviewAll").onclick=()=>runReview(Array.from(pending)); $("refresh").onclick=loadStatus; $("preset").onchange=updateEstimate; $("provider").onchange=changeProvider; $("apikey").oninput=updateReviewAvailability; loadStatus();
-</script></body></html>"""
-
-# Backwards-compatible name for tests/imports that referenced the old page.
-_GEMINI_PAGE_HTML = _AI_PAGE_HTML
-
 
 def create_app(manifest_path: Path) -> FastAPI:
     if not manifest_path.exists():
@@ -644,14 +424,15 @@ def create_app(manifest_path: Path) -> FastAPI:
         body["provider"] = "gemini"
         return await ai_review_route(body)
 
-    # ── /ai-review : self-contained review page ─────────────────────────────
-    @app.get("/ai-review", response_class=HTMLResponse)
-    async def ai_page() -> HTMLResponse:
-        return HTMLResponse(_AI_PAGE_HTML)
+    # ── legacy page routes ──────────────────────────────────────────────────
+    # The standalone AI page is gone; AI naming is step 2 of the one app.
+    @app.get("/ai-review")
+    async def ai_page() -> RedirectResponse:
+        return RedirectResponse("/#/name", status_code=307)
 
-    @app.get("/gemini", response_class=HTMLResponse)
-    async def gemini_page() -> HTMLResponse:
-        return HTMLResponse(_AI_PAGE_HTML)
+    @app.get("/gemini")
+    async def gemini_page() -> RedirectResponse:
+        return RedirectResponse("/#/name", status_code=307)
 
     # ── SPA: serve static build ─────────────────────────────────────────────
     if _STATIC_DIR.exists() and any(_STATIC_DIR.iterdir()):
