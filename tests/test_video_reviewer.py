@@ -742,3 +742,27 @@ def test_native_picker_uses_platform_commands(monkeypatch) -> None:
     monkeypatch.setattr("video_reviewer.gui.sys.platform", "win32")
     _pick_directory_sync()
     assert commands[-1][:3] == ["powershell", "-NoProfile", "-Command"]
+
+
+def test_save_accepts_edited_sequence(tmp_path: Path) -> None:
+    """The review editor owns all four SOP fields, sequence included."""
+    from fastapi.testclient import TestClient
+    from video_reviewer.gui import create_app
+
+    manifest = tmp_path / "manifest.csv"
+    write_manifest_csv(manifest, [ManifestRow(source_path=str(tmp_path / "clip.mov"))])
+    client = TestClient(create_app(manifest))
+
+    response = client.post("/api/save", json={"rows": [{
+        "index": 0,
+        "checked": True,
+        "description": "Robotic Sanding Composite Panel",
+        "client_or_location": "SOLV California",
+        "year_month": "2024-07",
+        "sequence": "3",
+    }]})
+
+    assert response.status_code == 200, response.json()
+    row = read_manifest_csv(manifest)[0]
+    assert row.review_status == REVIEW_APPROVED
+    assert row.proposed_name == "2024-07_Robotic Sanding Composite Panel_SOLV California_003.mov"

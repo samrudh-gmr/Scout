@@ -432,6 +432,8 @@ def create_app(manifest_path: Path) -> FastAPI:
                 row.description = new_desc
                 row.client_or_location = new_client
                 row.year_month = edit.get("year_month", row.year_month)
+                # The sequence is part of the SOP name, so the editor owns it too.
+                row.sequence = str(edit.get("sequence", row.sequence))
                 row.review_status = REVIEW_APPROVED
                 try:
                     row.proposed_name = build_proposed_name(row)
