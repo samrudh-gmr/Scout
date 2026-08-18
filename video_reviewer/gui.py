@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import socket
 from pathlib import Path
 
 from dataclasses import asdict
@@ -129,7 +130,7 @@ async function pickFolder(){
 async function prepareVideos(){
   const input = $("inputDir").value.trim();
   if(!input){ prepMsg('Choose or paste a video folder first.', 'err'); return; }
-  const base = input.replace(/\/$/, '');
+  const base = input.endsWith('/') ? input.slice(0, -1) : input;
   prepMsg('Preparing videos… this can take a few minutes for large files.', 'warn');
   $("prepareVideos").disabled = true;
   const res = await fetch('/api/run-prepare', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({input_dir:input, year_month:$("yearMonth").value.trim(), tmp_dir:`${base}/.video-renamer-tmp`, sample_count:0, proxy_scale:1280})}).then(r=>r.json());
@@ -464,7 +465,28 @@ def create_app(manifest_path: Path) -> FastAPI:
 
 def launch_gui(manifest_path: Path, host: str, port: int) -> None:
     import webbrowser
+
     import uvicorn
 
-    webbrowser.open(f"http://{host}:{port}")
-    uvicorn.run(create_app(manifest_path), host=host, port=port)
+    selected_port = _choose_port(host, port)
+    if selected_port != port:
+        print(f"Port {port} is already in use; starting Video Renamer on port {selected_port} instead.")
+    url = f"http://{host}:{selected_port}/ai-review"
+    print(f"Opening Video Renamer: {url}")
+    webbrowser.open(url)
+    uvicorn.run(create_app(manifest_path), host=host, port=selected_port)
+
+
+def _choose_port(host: str, preferred_port: int, attempts: int = 20) -> int:
+    for candidate in range(preferred_port, preferred_port + attempts):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            try:
+                sock.bind((host, candidate))
+            except OSError:
+                continue
+            return candidate
+    raise RuntimeError(
+        f"Could not find an available port from {preferred_port} to {preferred_port + attempts - 1}. "
+        "Close another Video Renamer window/server or pass --port with a free port."
+    )

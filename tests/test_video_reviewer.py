@@ -379,6 +379,18 @@ def test_review_rows_requires_api_key(monkeypatch, tmp_path: Path) -> None:
         raise AssertionError("Expected GeminiError when no API key is available")
 
 
+def test_choose_port_skips_busy_port() -> None:
+    import socket
+
+    from video_reviewer.gui import _choose_port
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.bind(("127.0.0.1", 0))
+        sock.listen(1)
+        busy_port = sock.getsockname()[1]
+        assert _choose_port("127.0.0.1", busy_port, attempts=2) == busy_port + 1
+
+
 def test_build_proposed_name() -> None:
     from video_reviewer.sop import VIDEO_EXTENSIONS
 
