@@ -15,7 +15,7 @@ from fastapi import FastAPI, Query
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from video_reviewer.config import save_correction
+from video_reviewer.config import api_key_hint, delete_api_key, load_api_key, save_api_key, save_correction
 from video_reviewer.manifest import (
     manifest_transaction,
     REVIEW_APPROVED,
@@ -513,8 +513,11 @@ def create_app(manifest_path: Path) -> FastAPI:
     async def ai_status(provider: str = Query("gemini")) -> JSONResponse:
         from video_reviewer.ai_review import available_providers, pending_indices, provider_status
 
-        status = provider_status(provider)
+        stored = load_api_key(provider)
+        status = provider_status(provider, api_key=stored or None)
         return JSONResponse({
+            "saved_key": bool(stored),
+            "key_hint": api_key_hint(provider),
             "provider": status.provider_id,
             "display_name": status.display_name,
             "available": status.available,
@@ -529,6 +532,27 @@ def create_app(manifest_path: Path) -> FastAPI:
     @app.get("/api/gemini/status")
     async def gemini_status() -> JSONResponse:
         return await ai_status("gemini")
+
+    # ── /api/settings/key ───────────────────────────────────────────────────
+    # Keys are held server-side in a 0600 file. The browser never receives one
+    # back — only whether a key is stored and its masked last four characters.
+    @app.post("/api/settings/key")
+    async def save_key(body: dict) -> JSONResponse:
+        provider = (body.get("provider") or "").strip()
+        api_key = (body.get("api_key") or "").strip()
+        if not provider:
+            return JSONResponse({"error": "Choose a provider before saving a key."}, status_code=422)
+        if not api_key:
+            return JSONResponse({"error": "Paste a key before saving."}, status_code=422)
+        save_api_key(provider, api_key)
+        return JSONResponse({"ok": True, "saved_key": True, "key_hint": api_key_hint(provider)})
+
+    @app.delete("/api/settings/key")
+    async def forget_key(provider: str = Query("")) -> JSONResponse:
+        if not provider:
+            return JSONResponse({"error": "Choose a provider before removing a key."}, status_code=422)
+        removed = delete_api_key(provider)
+        return JSONResponse({"ok": True, "removed": removed, "saved_key": False, "key_hint": ""})
 
     # ── /api/ai/review ──────────────────────────────────────────────────────
     @app.post("/api/ai/review")
@@ -545,7 +569,9 @@ def create_app(manifest_path: Path) -> FastAPI:
         indices = body.get("indices") if "indices" in body else None
         provider = (body.get("provider") or "gemini").strip()
         model = (body.get("model") or "").strip() or None
-        api_key = (body.get("api_key") or "").strip() or None
+        api_key = (body.get("api_key") or "").strip() or load_api_key(provider) or None
+        if body.get("remember_key") and (body.get("api_key") or "").strip():
+            save_api_key(provider, body["api_key"].strip())
         policy = ReviewPolicy.from_preset(body.get("preset") or "balanced")
         if indices is None:
             indices = pending_indices(manifest_path)

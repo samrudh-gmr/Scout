@@ -766,3 +766,28 @@ def test_save_accepts_edited_sequence(tmp_path: Path) -> None:
     row = read_manifest_csv(manifest)[0]
     assert row.review_status == REVIEW_APPROVED
     assert row.proposed_name == "2024-07_Robotic Sanding Composite Panel_SOLV California_003.mov"
+
+
+def test_api_key_is_stored_privately_and_never_returned(tmp_path: Path, monkeypatch) -> None:
+    from fastapi.testclient import TestClient
+    from video_reviewer import config
+    from video_reviewer.gui import create_app
+
+    monkeypatch.setattr(config, "_CONFIG_DIR", tmp_path / "home")
+    monkeypatch.setattr(config, "_KEYS_FILE", tmp_path / "home" / "keys.json")
+
+    manifest = tmp_path / "manifest.csv"
+    write_manifest_csv(manifest, [])
+    client = TestClient(create_app(manifest))
+
+    assert client.post("/api/settings/key", json={"provider": "gemini", "api_key": "sk-secret-9876"}).json() == {
+        "ok": True, "saved_key": True, "key_hint": "••••9876",
+    }
+    assert oct((tmp_path / "home" / "keys.json").stat().st_mode & 0o777) == "0o600"
+
+    status = client.get("/api/ai/status?provider=gemini")
+    assert status.json()["saved_key"] is True
+    assert "sk-secret" not in status.text
+
+    client.request("DELETE", "/api/settings/key?provider=gemini")
+    assert client.get("/api/ai/status?provider=gemini").json()["saved_key"] is False
