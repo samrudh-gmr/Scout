@@ -1,5 +1,6 @@
 tmp/**
 videos/**
+test_videos/**
 renamed/**
 .claude/**
 __pycache__/

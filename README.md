@@ -8,7 +8,8 @@ Production-focused video reviewer and renamer for the GMR SOP. It prepares video
 - `ffmpeg` and `ffprobe` on `PATH` (`static-ffmpeg` can provide binaries on first use)
 - `uv` recommended, or `pip`
 - Optional: Claude Desktop for MCP review
-- Optional: Gemini API key for API-key AI review
+- Optional: Gemini, OpenAI, or Anthropic API key for API-key AI review
+- Linux GUI folder picker: `zenity` (the UI falls back to a pasteable path if unavailable)
 
 ## Installation
 
@@ -57,6 +58,14 @@ Frame sampling is deterministic: frames are taken at midpoint timestamps across 
 
 ## API-key AI review
 
+Supported providers:
+
+| Provider | CLI value | Environment variable |
+|---|---|---|
+| Gemini | `gemini` | `GEMINI_API_KEY` or `GOOGLE_API_KEY` |
+| OpenAI | `openai` | `OPENAI_API_KEY` |
+| Anthropic | `anthropic` | `ANTHROPIC_API_KEY` |
+
 Provider-neutral command:
 
 ```bash
@@ -82,13 +91,15 @@ export GEMINI_API_KEY="your-key"
 # GOOGLE_API_KEY is also accepted
 ```
 
+For OpenAI or Anthropic, select the provider in the UI and paste its key for the current run, or set `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` before launch.
+
 The app does not write pasted API keys to the manifest. External API review sends the selected rows' sampled frames plus metadata to the selected provider. For confidential footage, use an account/project whose data retention/training settings match your policy.
 
 ### Cost/accuracy presets
 
-- `fast` — fewer frames, no second-pass behavior; lowest cost.
+- `fast` — fewer frames and fewer retries; lowest cost.
 - `balanced` — recommended default; good coverage without sending every possible frame.
-- `accurate` — more frames and lower approval threshold for difficult batches.
+- `accurate` — more frames while keeping a conservative auto-approval threshold.
 
 Rows are auto-approved only when the AI response is confident, SOP-valid, and not using `Unknown` for client/location unless policy allows it. Otherwise they are marked `needs_review` for a human.
 

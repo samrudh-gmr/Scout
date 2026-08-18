@@ -403,3 +403,259 @@ def test_build_proposed_name() -> None:
         sequence="1",
     )
     assert build_proposed_name(row) == "2024-07_Sanding Metal Panel_GMR HQ_001.mov"
+
+
+def test_ai_providers_are_registered_and_report_provider_specific_keys(monkeypatch) -> None:
+    from video_reviewer.ai_review import available_providers, provider_status
+
+    providers = {item["id"]: item for item in available_providers()}
+    assert {"gemini", "openai", "anthropic"} <= providers.keys()
+    assert providers["openai"]["env_key_names"] == ["OPENAI_API_KEY"]
+    assert providers["anthropic"]["env_key_names"] == ["ANTHROPIC_API_KEY"]
+
+    monkeypatch.setattr("video_reviewer.ai_review.providers.openai.OpenAIProvider._sdk_installed", lambda self: True)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    status = provider_status("openai")
+    assert status.available and not status.has_key
+    assert "OPENAI_API_KEY" in status.message
+
+
+def test_pick_dir_returns_actionable_missing_zenity_error(monkeypatch, tmp_path: Path) -> None:
+    from video_reviewer.gui import _pick_directory_sync
+
+    monkeypatch.setattr("video_reviewer.gui.shutil.which", lambda name: None)
+    try:
+        _pick_directory_sync()
+    except FileNotFoundError as exc:
+        assert "zenity" in str(exc)
+        assert "paste" in str(exc)
+    else:
+        raise AssertionError("Expected a clear missing-zenity error")
+
+
+def test_pick_dir_distinguishes_cancel(monkeypatch, tmp_path: Path) -> None:
+    from video_reviewer.gui import _pick_directory_sync
+
+    class Completed:
+        returncode = 1
+        stdout = ""
+        stderr = ""
+
+    monkeypatch.setattr("video_reviewer.gui.shutil.which", lambda name: "/usr/bin/zenity")
+    monkeypatch.setattr("video_reviewer.gui.subprocess.run", lambda *args, **kwargs: Completed())
+    result = _pick_directory_sync()
+    assert result.returncode == 1
+    assert result.stdout == ""
+
+
+
+def test_apply_preflight_collision_causes_zero_mutations(tmp_path: Path) -> None:
+    first = tmp_path / "first.mov"
+    second = tmp_path / "second.mov"
+    first.write_bytes(b"first")
+    second.write_bytes(b"second")
+    manifest = tmp_path / "manifest.csv"
+    rows = [
+        ManifestRow(
+            source_path=str(first), year_month="2024-07", description="Sanding Panel",
+            client_or_location="GMR HQ", sequence="001", review_status=REVIEW_APPROVED,
+        ),
+        ManifestRow(
+            source_path=str(second), year_month="2024-07", description="Welding Frame",
+            client_or_location="GMR HQ", sequence="002", review_status=REVIEW_APPROVED,
+        ),
+    ]
+    write_manifest_csv(manifest, rows)
+    collision = tmp_path / "2024-07_Welding Frame_GMR HQ_002.mov"
+    collision.write_bytes(b"existing")
+
+    result = apply_manifest(manifest_path=manifest, output_dir=None, dry_run=False)
+
+    assert result.ok is False
+    assert first.read_bytes() == b"first"
+    assert second.read_bytes() == b"second"
+    assert collision.read_bytes() == b"existing"
+    saved = read_manifest_csv(manifest)
+    assert [row.review_status for row in saved] == [REVIEW_APPROVED, REVIEW_APPROVED]
+
+
+def test_apply_output_dir_copies_without_removing_source(tmp_path: Path) -> None:
+    source = tmp_path / "source.mov"
+    source.write_bytes(b"video")
+    manifest = tmp_path / "manifest.csv"
+    write_manifest_csv(manifest, [ManifestRow(
+        source_path=str(source), year_month="2024-07", description="Sanding Panel",
+        client_or_location="GMR HQ", sequence="001", review_status=REVIEW_APPROVED,
+    )])
+    output = tmp_path / "output"
+
+    result = apply_manifest(manifest_path=manifest, output_dir=output, dry_run=False)
+
+    assert result.ok
+    assert source.read_bytes() == b"video"
+    assert (output / "2024-07_Sanding Panel_GMR HQ_001.mov").read_bytes() == b"video"
+    assert result.actions[0]["status"] == "copied"
+
+
+def test_artifact_paths_are_unique_for_same_stem(tmp_path: Path) -> None:
+    from video_reviewer.media import create_frame_dir, create_proxy_path
+
+    mov = tmp_path / "clip.mov"
+    mp4 = tmp_path / "clip.mp4"
+    assert create_proxy_path(tmp_path, mov) != create_proxy_path(tmp_path, mp4)
+    assert create_frame_dir(tmp_path, mov) != create_frame_dir(tmp_path, mp4)
+
+
+def test_ai_review_rejects_explicit_empty_and_malformed_indices(tmp_path: Path) -> None:
+    from fastapi.testclient import TestClient
+    from video_reviewer.gui import create_app
+
+    manifest = tmp_path / "manifest.csv"
+    write_manifest_csv(manifest, [])
+    client = TestClient(create_app(manifest))
+    assert client.post("/api/ai/review", json={"indices": []}).status_code == 422
+    assert client.post("/api/ai/review", json={"indices": ["bad"]}).status_code == 422
+
+
+def test_video_endpoint_rejects_empty_proxy_path(tmp_path: Path) -> None:
+    from fastapi.testclient import TestClient
+    from video_reviewer.gui import create_app
+
+    manifest = tmp_path / "manifest.csv"
+    write_manifest_csv(manifest, [ManifestRow(source_path=str(tmp_path / "source.mov"), proxy_path="")])
+    response = TestClient(create_app(manifest)).get("/api/video/0")
+    assert response.status_code == 404
+    assert response.json()["error"] == "proxy not found"
+
+
+def test_gui_rejects_non_loopback_host(tmp_path: Path) -> None:
+    from video_reviewer.gui import launch_gui
+
+    try:
+        launch_gui(tmp_path / "manifest.csv", "0.0.0.0", 8765)
+    except RuntimeError as exc:
+        assert "localhost" in str(exc)
+    else:
+        raise AssertionError("Expected non-loopback host to be rejected")
+
+
+
+def test_prepare_empty_folder_keeps_existing_manifest(monkeypatch, tmp_path: Path) -> None:
+    from fastapi.testclient import TestClient
+    from video_reviewer.gui import create_app
+
+    manifest = tmp_path / "manifest.csv"
+    existing = ManifestRow(source_path=str(tmp_path / "existing.mov"), review_status=REVIEW_PENDING)
+    write_manifest_csv(manifest, [existing])
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    monkeypatch.setattr("video_reviewer.workflow.build_prepare_manifest", lambda **kwargs: [])
+
+    response = TestClient(create_app(manifest)).post(
+        "/api/run-prepare",
+        json={"input_dir": str(empty), "tmp_dir": str(tmp_path / "cache")},
+    )
+
+    assert response.status_code == 422
+    assert read_manifest_csv(manifest)[0].source_path == existing.source_path
+
+
+def test_pick_dir_api_returns_selected_folder(monkeypatch, tmp_path: Path) -> None:
+    import subprocess
+    from fastapi.testclient import TestClient
+    from video_reviewer.gui import create_app
+
+    manifest = tmp_path / "manifest.csv"
+    write_manifest_csv(manifest, [])
+    selected = tmp_path / "selected"
+    selected.mkdir()
+    completed = subprocess.CompletedProcess(["zenity"], 0, stdout=f"{selected}\n", stderr="")
+    monkeypatch.setattr("video_reviewer.gui._pick_directory_sync", lambda: completed)
+
+    response = TestClient(create_app(manifest)).get("/api/pick-dir")
+
+    assert response.status_code == 200
+    assert response.json() == {"path": str(selected), "cancelled": False}
+
+
+def test_ai_result_is_not_applied_after_manifest_row_changes(monkeypatch, tmp_path: Path) -> None:
+    from video_reviewer.ai_review.models import ProviderConfig, ReviewPolicy, ReviewResponse
+    from video_reviewer.ai_review.service import _review_one_row
+
+    manifest = _manifest_with_frame(tmp_path)
+
+    class Provider:
+        def classify(self, request, config):
+            replacement = ManifestRow(
+                source_path=str(tmp_path / "different.mov"),
+                sample_frames=read_manifest_csv(manifest)[0].sample_frames,
+                year_month="2024-07",
+                sequence="001",
+                review_status=REVIEW_PENDING,
+            )
+            write_manifest_csv(manifest, [replacement])
+            return ReviewResponse(
+                description="Sanding Panel", client_or_location="GMR HQ",
+                is_manual=True, confidence=0.95,
+            )
+
+    result = _review_one_row(
+        manifest, 0, Provider(), ProviderConfig(provider_id="fake", api_key="x"), ReviewPolicy()
+    )
+
+    assert result.ok is False
+    assert "video list changed" in result.error.lower()
+    saved = read_manifest_csv(manifest)[0]
+    assert saved.description == ""
+    assert saved.review_status == REVIEW_PENDING
+
+
+def test_string_false_is_not_parsed_as_manual() -> None:
+    from video_reviewer.ai_review.providers.common import parse_response
+
+    parsed = parse_response({
+        "description": "Sanding Panel", "client_or_location": "GMR HQ",
+        "is_manual": "false", "confidence": 0.8,
+    })
+    assert parsed.is_manual is False
+
+
+
+def test_pick_dir_preserves_filesystem_root(monkeypatch, tmp_path: Path) -> None:
+    import subprocess
+    from fastapi.testclient import TestClient
+    from video_reviewer.gui import create_app
+
+    manifest = tmp_path / "manifest.csv"
+    write_manifest_csv(manifest, [])
+    monkeypatch.setattr(
+        "video_reviewer.gui._pick_directory_sync",
+        lambda: subprocess.CompletedProcess(["zenity"], 0, stdout="/\n", stderr=""),
+    )
+    response = TestClient(create_app(manifest)).get("/api/pick-dir")
+    assert response.json() == {"path": "/", "cancelled": False}
+
+
+def test_unexpected_ai_error_does_not_leak_exception_text(monkeypatch, tmp_path: Path) -> None:
+    from fastapi.testclient import TestClient
+    from video_reviewer.gui import create_app
+
+    manifest = tmp_path / "manifest.csv"
+    write_manifest_csv(manifest, [ManifestRow(source_path=str(tmp_path / "a.mov"))])
+
+    def fail(*args, **kwargs):
+        raise RuntimeError("secret-key-should-not-leak")
+
+    monkeypatch.setattr("video_reviewer.ai_review.review_rows_with_ai", fail)
+    response = TestClient(create_app(manifest)).post(
+        "/api/ai/review", json={"indices": [0], "provider": "gemini", "api_key": "x"}
+    )
+    assert response.status_code == 500
+    assert "secret-key-should-not-leak" not in response.text
+
+
+
+def test_accurate_preset_keeps_conservative_approval_threshold() -> None:
+    from video_reviewer.ai_review.models import ReviewPolicy
+
+    assert ReviewPolicy.from_preset("accurate").confidence_threshold >= ReviewPolicy.from_preset("balanced").confidence_threshold

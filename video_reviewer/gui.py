@@ -1,7 +1,12 @@
 from __future__ import annotations
 
 import logging
+import copy
+import shutil
 import socket
+import subprocess
+import sys
+import threading
 from pathlib import Path
 
 from dataclasses import asdict
@@ -12,6 +17,7 @@ from fastapi.staticfiles import StaticFiles
 
 from video_reviewer.config import save_correction
 from video_reviewer.manifest import (
+    manifest_transaction,
     REVIEW_APPROVED,
     read_manifest_csv,
     write_manifest_csv,
@@ -21,6 +27,41 @@ from video_reviewer.sop import build_proposed_name
 logger = logging.getLogger("video_renamer")
 
 _STATIC_DIR = Path(__file__).parent / "static"
+
+
+def _safe_artifact(path: Path, allowed_suffixes: set[str]) -> bool:
+    try:
+        return (
+            path.suffix.lower() in allowed_suffixes
+            and path.exists()
+            and path.is_file()
+            and not path.is_symlink()
+        )
+    except OSError:
+        return False
+
+
+def _pick_directory_sync() -> subprocess.CompletedProcess[str]:
+    """Run a desktop picker with a hard timeout; caller supplies the worker thread."""
+    if sys.platform.startswith("linux"):
+        executable = shutil.which("zenity")
+        if not executable:
+            raise FileNotFoundError("zenity is not installed; install it or paste the folder path")
+        command = [executable, "--file-selection", "--directory", "--title=Select video folder"]
+    elif sys.platform == "win32":
+        ps = (
+            "Add-Type -AssemblyName System.Windows.Forms;"
+            "$d = New-Object System.Windows.Forms.FolderBrowserDialog;"
+            "$d.Description = 'Select folder';"
+            "[void]$d.ShowDialog();"
+            "Write-Output $d.SelectedPath"
+        )
+        command = ["powershell", "-NoProfile", "-Command", ps]
+    elif sys.platform == "darwin":
+        command = ["osascript", "-e", 'POSIX path of (choose folder with prompt "Select folder")']
+    else:
+        raise OSError(f"no native folder picker is configured for {sys.platform}")
+    return subprocess.run(command, capture_output=True, text=True, timeout=60, check=False)
 
 _AI_PAGE_HTML = """<!DOCTYPE html>
 <html lang="en">
@@ -70,7 +111,7 @@ _AI_PAGE_HTML = """<!DOCTYPE html>
   <div class="steps"><span class="step active">1 AI setup</span><span class="step">2 choose videos</span><span class="step">3 review uncertain</span><span class="step">4 preview/apply in main app</span></div>
 
   <div class="cards">
-    <section class="card"><h2>Provider</h2><p class="muted">Gemini is enabled now; the backend is provider-agnostic so more APIs can be added cleanly.</p><div id="providers"></div></section>
+    <section class="card"><h2>Provider</h2><p class="muted">Choose a vision provider. Keys are used for the request only and never written to the manifest.</p><div id="providers"></div></section>
     <section class="card privacy"><h2>Privacy + cost</h2><p>External API review sends only sampled frames and metadata for selected rows. API keys are used for the request only and are not written to the manifest.</p><p id="estimate" class="muted">Choose a preset to see the frame budget.</p></section>
     <section class="card"><h2>Recommended defaults</h2><p class="muted">Use <b>Balanced</b> first. It keeps full-resolution sampled frames, limits frames per video, and sends uncertain rows to manual review instead of guessing.</p></section>
   </div>
@@ -95,7 +136,7 @@ _AI_PAGE_HTML = """<!DOCTYPE html>
 
   <div class="bar">
     <label class="field">Provider
-      <select id="provider"><option value="gemini">Gemini API</option></select>
+      <select id="provider"></select>
     </label>
     <label class="field">API key
       <input id="apikey" type="password" placeholder="paste key, or set GEMINI_API_KEY" autocomplete="off" />
@@ -113,19 +154,27 @@ _AI_PAGE_HTML = """<!DOCTYPE html>
 </main>
 <script>
 const $ = (id) => document.getElementById(id);
-let pending = new Set(); let allRows = [];
+let pending = new Set(); let allRows = []; let providerNeedsKey = true; let providerAvailable = false;
 function esc(s){ return String(s||"").replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 function pill(status){ const cls=["pending","approved","needs_review","blocked","missing","working"].includes(status)?status:"muted"; return `<span class="pill ${cls}">${esc(status)}</span>`; }
 function statusMsg(text, cls){ const el=$("status"); el.textContent=text; el.className=cls||""; }
 function selectedIndices(){ return Array.from(document.querySelectorAll(".rowcheck:checked")).map(c=>Number(c.value)); }
 function presetFrames(){ return {fast:6, balanced:12, accurate:16}[$("preset").value] || 12; }
 function updateEstimate(){ const n = pending.size; const f = presetFrames(); const total=n*f; const tier= total<=60?'low':total<=250?'medium':'high'; $("estimate").textContent = `${n} pending video(s) × up to ${f} frames = up to ${total} images (${tier} cost tier).`; }
+function updateReviewAvailability(){
+  const hasKey = !providerNeedsKey || $("apikey").value.trim().length > 0;
+  const enabled = providerAvailable && pending.size > 0 && hasKey;
+  $("reviewSelected").disabled = !enabled;
+  $("reviewAll").disabled = !enabled;
+}
 function prepMsg(text, cls){ const el=$("prepareStatus"); el.textContent=text; el.className=cls||"muted"; }
 async function pickFolder(){
   prepMsg('Opening folder picker…', 'muted');
-  const res = await fetch('/api/pick-dir').then(r=>r.json());
-  if(res.path){ $("inputDir").value = res.path; prepMsg('Folder selected. Click Prepare videos.', 'ok'); }
-  else prepMsg('Folder picker was cancelled or unavailable. You can paste the folder path instead.', 'warn');
+  try { const response = await fetch('/api/pick-dir'); const res = await response.json();
+    if(res.path){ $("inputDir").value = res.path; prepMsg('Folder selected. Click Prepare videos.', 'ok'); }
+    else if(res.cancelled) prepMsg('Folder picker cancelled. You can paste the folder path instead.', 'warn');
+    else prepMsg(res.error || 'Folder picker unavailable. Paste the folder path instead.', 'err');
+  } catch (error) { prepMsg('Could not reach the folder picker. Paste the folder path instead.', 'err'); }
 }
 async function prepareVideos(){
   const input = $("inputDir").value.trim();
@@ -133,11 +182,17 @@ async function prepareVideos(){
   const base = input.endsWith('/') ? input.slice(0, -1) : input;
   prepMsg('Preparing videos… this can take a few minutes for large files.', 'warn');
   $("prepareVideos").disabled = true;
-  const res = await fetch('/api/run-prepare', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({input_dir:input, year_month:$("yearMonth").value.trim(), tmp_dir:`${base}/.video-renamer-tmp`, sample_count:0, proxy_scale:1280})}).then(r=>r.json());
-  $("prepareVideos").disabled = false;
-  if(res.error){ prepMsg(res.error, 'err'); return; }
-  prepMsg(res.message || 'Prepared videos.', 'ok');
-  await loadStatus();
+  try {
+    const response = await fetch('/api/run-prepare', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({input_dir:input, year_month:$("yearMonth").value.trim(), tmp_dir:`${base}/.video-renamer-tmp`, sample_count:0, proxy_scale:1280})});
+    const res = await response.json();
+    if(res.error){ prepMsg(res.error, 'err'); return; }
+    prepMsg(res.message || 'Prepared videos.', 'ok');
+    await loadStatus();
+  } catch (error) {
+    prepMsg('Preparation failed or the server became unavailable. Your existing batch was left unchanged.', 'err');
+  } finally {
+    $("prepareVideos").disabled = false;
+  }
 }
 async function loadStatus(){
   const provider=$("provider").value;
@@ -146,13 +201,18 @@ async function loadStatus(){
     fetch("/api/rows").then(r=>r.json()),
   ]);
   pending = new Set(statusRes.pending || []); allRows = rowsRes.rows || [];
-  $("reviewSelected").disabled = !statusRes.available;
-  $("reviewAll").disabled = !statusRes.available;
-  $("providers").innerHTML = (statusRes.providers||[]).map(p=>`<div>${esc(p.display_name)} <span class="muted">default ${esc(p.default_model)}</span></div>`).join("");
+  providerAvailable = Boolean(statusRes.available);
+  providerNeedsKey = Boolean(statusRes.needs_key);
+  const providerOptions = statusRes.providers || [];
+  const select = $("provider"); const current = provider;
+  select.innerHTML = providerOptions.map(p=>`<option value="${esc(p.id)}">${esc(p.display_name)}</option>`).join("");
+  if(providerOptions.some(p=>p.id===current)) select.value = current;
+  $("providers").innerHTML = providerOptions.map(p=>`<div>${esc(p.display_name)} <span class="muted">default ${esc(p.default_model)} · key ${esc((p.env_key_names||[]).join(' or '))}</span></div>`).join("");
+  $("apikey").placeholder = statusRes.env_key_names?.length ? `paste key, or set ${statusRes.env_key_names.join(' / ')}` : 'paste provider API key';
   if(!statusRes.available) statusMsg(statusRes.message, "err");
   else if(statusRes.needs_key) statusMsg(statusRes.message, "warn");
   else statusMsg(`${statusRes.display_name || 'AI provider'} ready — ${pending.size} video(s) pending.`, "ok");
-  updateEstimate(); renderRows(allRows);
+  updateEstimate(); updateReviewAvailability(); renderRows(allRows);
 }
 function renderRows(rows){ const host=$("rows"); host.innerHTML=""; for(const row of rows){
   const checkable = pending.has(row.index);
@@ -169,7 +229,11 @@ async function reviewOne(index){
   return r;
 }
 async function runReview(indices){ if(!indices.length){statusMsg('No pending rows selected.', 'err'); return;} $("reviewSelected").disabled=true; $("reviewAll").disabled=true; let approved=0; for(let i=0;i<indices.length;i++){ statusMsg(`Reviewing ${i+1} / ${indices.length}…`, ''); const r=await reviewOne(indices[i]); if(r.ok) approved++; } statusMsg(`Done — ${approved}/${indices.length} ready to rename. Review the rest manually.`, approved===indices.length?'ok':'warn'); await loadStatus(); }
-$("pickFolder").onclick=pickFolder; $("prepareVideos").onclick=prepareVideos; $("reviewSelected").onclick=()=>runReview(selectedIndices()); $("reviewAll").onclick=()=>runReview(Array.from(pending)); $("refresh").onclick=loadStatus; $("preset").onchange=updateEstimate; $("provider").onchange=loadStatus; loadStatus();
+function changeProvider(){
+  $("apikey").value = '';
+  loadStatus();
+}
+$("pickFolder").onclick=pickFolder; $("prepareVideos").onclick=prepareVideos; $("reviewSelected").onclick=()=>runReview(selectedIndices()); $("reviewAll").onclick=()=>runReview(Array.from(pending)); $("refresh").onclick=loadStatus; $("preset").onchange=updateEstimate; $("provider").onchange=changeProvider; $("apikey").oninput=updateReviewAvailability; loadStatus();
 </script></body></html>"""
 
 # Backwards-compatible name for tests/imports that referenced the old page.
@@ -180,6 +244,7 @@ def create_app(manifest_path: Path) -> FastAPI:
     if not manifest_path.exists():
         write_manifest_csv(manifest_path, [])
     app = FastAPI()
+    prepare_lock = threading.Lock()
 
     # ── /api/rows ──────────────────────────────────────────────────────────
     @app.get("/api/rows")
@@ -215,58 +280,26 @@ def create_app(manifest_path: Path) -> FastAPI:
             "default_model": "",
         })
 
-    # ── /api/list-dir ───────────────────────────────────────────────────────
-    @app.get("/api/list-dir")
-    async def api_list_dir(path: str = Query(default="/")) -> JSONResponse:
-        target = Path(path).expanduser().resolve()
-        if not target.exists() or not target.is_dir():
-            return JSONResponse({"error": "not found"}, status_code=404)
-        try:
-            entries = sorted(target.iterdir(), key=lambda p: p.name.lower())
-            dirs = [e.name for e in entries if e.is_dir() and not e.name.startswith(".")]
-        except PermissionError:
-            return JSONResponse({"error": "permission denied"}, status_code=403)
-        parent = str(target.parent) if target != target.parent else str(target)
-        return JSONResponse({"path": str(target), "parent": parent, "dirs": dirs})
 
     # ── /api/pick-dir ───────────────────────────────────────────────────────
     @app.get("/api/pick-dir")
     async def api_pick_dir() -> JSONResponse:
-        import sys as _sys
-        path: str | None = None
-        if _sys.platform == "win32":
-            import subprocess as _sp
-            ps = (
-                "Add-Type -AssemblyName System.Windows.Forms;"
-                "$d = New-Object System.Windows.Forms.FolderBrowserDialog;"
-                "$d.Description = 'Select folder';"
-                "[void]$d.ShowDialog();"
-                "Write-Output $d.SelectedPath"
-            )
-            result = _sp.run(
-                ["powershell", "-NoProfile", "-Command", ps],
-                capture_output=True, text=True,
-            )
-            path = result.stdout.strip() or None
-        elif _sys.platform == "darwin":
-            import subprocess as _sp
-            result = _sp.run(
-                ["osascript", "-e", 'POSIX path of (choose folder with prompt "Select folder")'],
-                capture_output=True, text=True,
-            )
-            path = result.stdout.strip().rstrip("/") or None
-        else:
-            try:
-                import tkinter as _tk
-                from tkinter import filedialog as _fd
-                root = _tk.Tk()
-                root.withdraw()
-                root.wm_attributes("-topmost", True)
-                path = _fd.askdirectory(parent=root) or None
-                root.destroy()
-            except Exception:
-                path = None
-        return JSONResponse({"path": path})
+        import anyio
+        try:
+            result = await anyio.to_thread.run_sync(_pick_directory_sync)
+        except TimeoutError:
+            return JSONResponse({"error": "Folder picker timed out. Close other dialogs and try again, or paste the path."}, status_code=504)
+        except (FileNotFoundError, OSError) as exc:
+            logger.warning("Folder picker failed: %s", exc)
+            return JSONResponse({"error": f"Could not open a native folder picker ({exc}). Paste the path instead."}, status_code=503)
+        if result.returncode == 1:
+            return JSONResponse({"path": None, "cancelled": True})
+        if result.returncode != 0:
+            detail = result.stderr.strip() or "native picker returned an error"
+            return JSONResponse({"error": f"Folder picker failed: {detail}. Paste the path instead."}, status_code=503)
+        selected = result.stdout.strip()
+        path = "/" if selected == "/" else selected.rstrip("/") or None
+        return JSONResponse({"path": path, "cancelled": path is None})
 
     # ── /api/video ──────────────────────────────────────────────────────────
     @app.get("/api/video/{index}")
@@ -274,8 +307,9 @@ def create_app(manifest_path: Path) -> FastAPI:
         rows = read_manifest_csv(manifest_path)
         if index < 0 or index >= len(rows):
             return JSONResponse({"error": "not found"}, status_code=404)
-        proxy = Path(rows[index].proxy_path)
-        if not proxy.exists():
+        raw_proxy = rows[index].proxy_path
+        proxy = Path(raw_proxy) if raw_proxy else None
+        if not proxy or not _safe_artifact(proxy, {".mp4"}):
             return JSONResponse({"error": "proxy not found"}, status_code=404)
         return FileResponse(proxy, media_type="video/mp4")
 
@@ -289,7 +323,7 @@ def create_app(manifest_path: Path) -> FastAPI:
         if frame_index < 0 or frame_index >= len(frames):
             return JSONResponse({"error": "not found"}, status_code=404)
         frame_path = Path(frames[frame_index])
-        if not frame_path.exists():
+        if not _safe_artifact(frame_path, {".jpg", ".jpeg", ".png"}):
             return JSONResponse({"error": "frame not found"}, status_code=404)
         suffix = frame_path.suffix.lower()
         media_type = "image/png" if suffix == ".png" else "image/jpeg"
@@ -298,57 +332,74 @@ def create_app(manifest_path: Path) -> FastAPI:
     # ── /api/save ───────────────────────────────────────────────────────────
     @app.post("/api/save")
     async def save(body: dict) -> JSONResponse:
-        edited = {item["index"]: item for item in body.get("rows", [])}
-        rows = read_manifest_csv(manifest_path)
-        for i, row in enumerate(rows):
-            if i not in edited:
-                continue
-            edit = edited[i]
-            if not edit.get("checked"):
-                continue
-            new_desc = edit.get("description", row.description)
-            new_client = edit.get("client_or_location", row.client_or_location)
-            if row.description and (new_desc != row.description or new_client != row.client_or_location):
+        try:
+            edited = {int(item["index"]): item for item in body.get("rows", [])}
+        except (KeyError, TypeError, ValueError):
+            return JSONResponse({"error": "Each edited row must include a valid integer index."}, status_code=422)
+        with manifest_transaction(manifest_path):
+            original_rows = read_manifest_csv(manifest_path)
+            rows = copy.deepcopy(original_rows)
+            corrections: list[tuple] = []
+            for i, row in enumerate(rows):
+                edit = edited.get(i)
+                if not edit or not edit.get("checked"):
+                    continue
+                new_desc = edit.get("description", row.description)
+                new_client = edit.get("client_or_location", row.client_or_location)
+                if row.description and (new_desc != row.description or new_client != row.client_or_location):
+                    corrections.append((Path(row.source_path).name, row.description, row.client_or_location, new_desc, new_client))
+                row.description = new_desc
+                row.client_or_location = new_client
+                row.year_month = edit.get("year_month", row.year_month)
+                row.review_status = REVIEW_APPROVED
+                try:
+                    row.proposed_name = build_proposed_name(row)
+                except ValueError as exc:
+                    return JSONResponse({"error": f"Row {i} ({Path(row.source_path).name}): {exc}"}, status_code=422)
+            for source_name, old_desc, old_client, new_desc, new_client in corrections:
                 save_correction(
-                    source_name=Path(row.source_path).name,
-                    ai_fields={"description": row.description, "client_or_location": row.client_or_location},
+                    source_name=source_name,
+                    ai_fields={"description": old_desc, "client_or_location": old_client},
                     corrected_fields={"description": new_desc, "client_or_location": new_client},
                 )
-            row.description = new_desc
-            row.client_or_location = new_client
-            row.year_month = edit.get("year_month", row.year_month)
-            row.review_status = REVIEW_APPROVED
-            try:
-                row.proposed_name = build_proposed_name(row)
-            except ValueError as exc:
-                return JSONResponse(
-                    {"error": f"Row {i} ({Path(row.source_path).name}): {exc}"},
-                    status_code=422,
-                )
-        write_manifest_csv(manifest_path, rows)
+            write_manifest_csv(manifest_path, rows)
         return JSONResponse({"ok": True})
 
     # ── /api/run-prepare ────────────────────────────────────────────────────
     @app.post("/api/run-prepare")
     async def run_prepare_route(body: dict) -> JSONResponse:
+        import anyio
         from video_reviewer.workflow import build_prepare_manifest
+        if not prepare_lock.acquire(blocking=False):
+            return JSONResponse({"error": "A prepare job is already running. Wait for it to finish."}, status_code=409)
         try:
-            rows = build_prepare_manifest(
-                input_dir=Path(body["input_dir"]).resolve(),
-                year_month=body.get("year_month", ""),
-                start_seq=int(body.get("start_seq", 1)),
-                tmp_dir=Path(body.get("tmp_dir", "tmp")).resolve(),
-                proxy_scale=int(body.get("proxy_scale", 1280)),
-                sample_count=int(body.get("sample_count", 0)),
+            input_dir = Path(body["input_dir"]).expanduser().resolve()
+            rows = await anyio.to_thread.run_sync(
+                lambda: build_prepare_manifest(
+                    input_dir=input_dir,
+                    year_month=body.get("year_month", ""),
+                    start_seq=int(body.get("start_seq", 1)),
+                    tmp_dir=Path(body.get("tmp_dir", "tmp")).expanduser().resolve(),
+                    proxy_scale=int(body.get("proxy_scale", 1280)),
+                    sample_count=int(body.get("sample_count", 0)),
+                )
             )
-            write_manifest_csv(manifest_path, rows)
+            if not rows:
+                return JSONResponse(
+                    {"error": "No supported video files were found. The existing batch was left unchanged."},
+                    status_code=422,
+                )
+            with manifest_transaction(manifest_path):
+                write_manifest_csv(manifest_path, rows)
             return JSONResponse({
                 "ok": True,
                 "message": f"Prepared {len(rows)} file(s). Manifest written to {manifest_path}.",
             })
         except Exception as exc:
             logger.exception("Prepare failed")
-            return JSONResponse({"error": f"Prepare failed: {exc}"}, status_code=500)
+            return JSONResponse({"error": f"Prepare failed: {type(exc).__name__}. Check the folder and available disk space."}, status_code=500)
+        finally:
+            prepare_lock.release()
 
     # ── /api/run-apply ──────────────────────────────────────────────────────
     @app.post("/api/run-apply")
@@ -363,10 +414,11 @@ def create_app(manifest_path: Path) -> FastAPI:
         )
         lines = list(result.errors)
         for action in result.actions:
-            if action["status"] == "would_rename":
-                lines.append(f"Would rename: {action['source']} -> {action['target']}")
-            elif action["status"] == "renamed":
-                lines.append(f"Renamed: {action['target']}")
+            if action["status"] in {"would_rename", "would_copy"}:
+                verb = "copy" if action["status"] == "would_copy" else "rename"
+                lines.append(f"Would {verb}: {action['source']} -> {action['target']}")
+            elif action["status"] in {"renamed", "copied", "already_named"}:
+                lines.append(f"{action['status'].replace('_', ' ').title()}: {action['target']}")
         return JSONResponse({
             "ok": result.ok,
             "output": "\n".join(lines),
@@ -386,6 +438,7 @@ def create_app(manifest_path: Path) -> FastAPI:
             "needs_key": not status.has_key,
             "message": status.message,
             "default_model": status.default_model,
+            "env_key_names": list(status.env_key_names),
             "providers": available_providers(),
             "pending": pending_indices(manifest_path),
         })
@@ -406,14 +459,19 @@ def create_app(manifest_path: Path) -> FastAPI:
             review_rows_with_ai,
         )
 
-        indices = body.get("indices")
+        indices = body.get("indices") if "indices" in body else None
         provider = (body.get("provider") or "gemini").strip()
         model = (body.get("model") or "").strip() or None
         api_key = (body.get("api_key") or "").strip() or None
         policy = ReviewPolicy.from_preset(body.get("preset") or "balanced")
-        if not indices:
+        if indices is None:
             indices = pending_indices(manifest_path)
-        indices = [int(i) for i in indices]
+        elif not indices:
+            return JSONResponse({"error": "Select at least one video to review."}, status_code=422)
+        try:
+            indices = [int(i) for i in indices]
+        except (TypeError, ValueError):
+            return JSONResponse({"error": "Review indices must be integers."}, status_code=422)
 
         try:
             # Provider SDK calls are blocking; run them off the
@@ -432,7 +490,10 @@ def create_app(manifest_path: Path) -> FastAPI:
             return JSONResponse({"error": str(exc), "category": exc.category.value}, status_code=400)
         except Exception as exc:  # noqa: BLE001 - surface to the GUI
             logger.exception("AI review failed")
-            return JSONResponse({"error": f"AI review failed: {exc}"}, status_code=500)
+            return JSONResponse(
+                {"error": "AI review failed unexpectedly. Check the provider settings and try again."},
+                status_code=500,
+            )
 
         return JSONResponse({
             "ok": True,
@@ -468,6 +529,11 @@ def launch_gui(manifest_path: Path, host: str, port: int) -> None:
 
     import uvicorn
 
+    if host not in {"127.0.0.1", "localhost", "::1"}:
+        raise RuntimeError(
+            "Video Renamer has no remote authentication and can only bind to localhost. "
+            "Use --host 127.0.0.1."
+        )
     selected_port = _choose_port(host, port)
     if selected_port != port:
         print(f"Port {port} is already in use; starting Video Renamer on port {selected_port} instead.")

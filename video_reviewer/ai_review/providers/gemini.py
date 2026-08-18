@@ -175,7 +175,7 @@ class GeminiProvider:
         return ReviewResponse(
             description=str(data.get("description", "")).strip(),
             client_or_location=str(data.get("client_or_location", "")).strip(),
-            is_manual=bool(data.get("is_manual", False)),
+            is_manual=(data.get("is_manual") is True or str(data.get("is_manual", "")).strip().lower() in {"true", "1", "yes"}),
             confidence=max(0.0, min(1.0, confidence)),
             rationale=str(data.get("rationale", "")).strip(),
             flags=[str(flag).strip() for flag in flags if str(flag).strip()],
@@ -197,4 +197,4 @@ class GeminiProvider:
             return "Gemini rejected the API key. Check that it is valid and enabled for AI Studio."
         if category == ErrorCategory.RATE_LIMIT:
             return "Gemini rate limit or quota reached. Try fewer videos, wait, or use a cheaper model/preset."
-        return f"Gemini provider failed: {type(exc).__name__}: {str(exc)[:180]}"
+        return "Gemini is temporarily unavailable. Try again later or choose another provider."

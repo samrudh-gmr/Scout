@@ -63,7 +63,7 @@ class ReviewPolicy:
         if normalized in {"fast", "cheap", "cheapest"}:
             return cls(max_frames=6, confidence_threshold=0.80, allow_second_pass=False, max_retries=1)
         if normalized in {"accurate", "best", "most-accurate"}:
-            return cls(max_frames=16, confidence_threshold=0.75, allow_second_pass=True, second_pass_threshold=0.72, max_retries=2)
+            return cls(max_frames=16, confidence_threshold=0.80, allow_second_pass=True, second_pass_threshold=0.72, max_retries=2)
         return cls()
 
 

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-import threading
+
 from dataclasses import asdict
 from pathlib import Path
 
@@ -17,12 +17,18 @@ from video_reviewer.ai_review.models import (
     RowResult,
 )
 from video_reviewer.ai_review.providers.gemini import GeminiProvider
-from video_reviewer.manifest import REVIEW_APPROVED, REVIEW_BLOCKED, REVIEW_NEEDS_REVIEW, REVIEW_PENDING, read_manifest_csv, write_manifest_csv
+from video_reviewer.ai_review.providers.anthropic import AnthropicProvider
+from video_reviewer.ai_review.providers.openai import OpenAIProvider
+from video_reviewer.manifest import manifest_transaction, REVIEW_APPROVED, REVIEW_BLOCKED, REVIEW_NEEDS_REVIEW, REVIEW_PENDING, read_manifest_csv, write_manifest_csv
 from video_reviewer.media import extract_sample_frames, create_frame_dir
 from video_reviewer.sop import build_proposed_name
 
-_PROVIDERS = {"gemini": GeminiProvider()}
-_MANIFEST_LOCK = threading.Lock()
+_PROVIDERS = {
+    "gemini": GeminiProvider(),
+    "openai": OpenAIProvider(),
+    "anthropic": AnthropicProvider(),
+}
+
 
 
 def available_providers() -> list[dict[str, str]]:
@@ -33,6 +39,7 @@ def available_providers() -> list[dict[str, str]]:
             "default_model": provider.default_model,
             "cheap_model": getattr(provider, "cheap_model", provider.default_model),
             "accurate_model": getattr(provider, "accurate_model", provider.default_model),
+            "env_key_names": list(getattr(provider, "env_key_names", ())),
         }
         for provider in _PROVIDERS.values()
     ]
@@ -99,19 +106,26 @@ def review_rows_with_ai(
 
 
 def _review_one_row(manifest_path: Path, index: int, provider, config: ProviderConfig, policy: ReviewPolicy) -> RowResult:
-    with _MANIFEST_LOCK:
+    with manifest_transaction(manifest_path):
         rows = read_manifest_csv(manifest_path)
         if index < 0 or index >= len(rows):
             return RowResult(index=index, source_name=str(index), ok=False, status="missing", error="row index out of range", error_category=ErrorCategory.NOT_FOUND.value)
         row = rows[index]
+        source_identity = str(Path(row.source_path).resolve())
         source_name = Path(row.source_path).name
 
     try:
         request = _build_request(row, policy)
         response = provider.classify(request, config)
-        with _MANIFEST_LOCK:
+        with manifest_transaction(manifest_path):
             rows = read_manifest_csv(manifest_path)
-            row = rows[index]
+            matching = [candidate for candidate in rows if str(Path(candidate.source_path).resolve()) == source_identity]
+            if len(matching) != 1:
+                raise AiReviewError(
+                    "The video list changed while AI review was running. Refresh and review this row again.",
+                    ErrorCategory.VALIDATION,
+                )
+            row = matching[0]
             _apply_response(row, response, policy)
             write_manifest_csv(manifest_path, rows)
         error = ""
@@ -119,10 +133,11 @@ def _review_one_row(manifest_path: Path, index: int, provider, config: ProviderC
     except AiReviewError as exc:
         error = str(exc)
         category = exc.category.value
-        with _MANIFEST_LOCK:
+        with manifest_transaction(manifest_path):
             rows = read_manifest_csv(manifest_path)
-            if 0 <= index < len(rows):
-                row = rows[index]
+            matching = [candidate for candidate in rows if str(Path(candidate.source_path).resolve()) == source_identity]
+            if len(matching) == 1:
+                row = matching[0]
                 if exc.category in {ErrorCategory.VALIDATION, ErrorCategory.MALFORMED_RESPONSE, ErrorCategory.NO_FRAMES}:
                     row.review_status = REVIEW_BLOCKED if exc.category == ErrorCategory.VALIDATION else REVIEW_NEEDS_REVIEW
                     row.ai_flags = _merge_flags(row.ai_flags, exc.category.value)

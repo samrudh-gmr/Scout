@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -10,6 +11,7 @@ from video_reviewer.manifest import (
     REVIEW_APPROVED,
     REVIEW_BLOCKED,
     REVIEW_PENDING,
+    manifest_transaction,
     read_manifest_csv,
     write_manifest_csv,
 )
@@ -139,29 +141,74 @@ class ApplyResult:
 
 
 def apply_manifest(*, manifest_path: Path, output_dir: Path | None, dry_run: bool) -> ApplyResult:
-    rows = read_manifest_csv(manifest_path)
-    errors = validate_manifest_rows(rows)
-    if errors:
-        return ApplyResult(ok=False, actions=[], errors=errors)
-    actions: list[dict[str, str]] = []
-    for row in rows:
-        if row.review_status != REVIEW_APPROVED:
-            continue
-        target_name = build_proposed_name(row)
-        target = Path(row.source_path).with_name(target_name)
+    with manifest_transaction(manifest_path):
+        rows = read_manifest_csv(manifest_path)
+        errors = validate_manifest_rows(rows)
+        plan: list[tuple[ManifestRow, Path, Path]] = []
+        seen_targets: set[str] = set()
+        for row in rows:
+            if row.review_status != REVIEW_APPROVED:
+                continue
+            source = Path(row.source_path)
+            target_name = build_proposed_name(row)
+            target = (output_dir / target_name) if output_dir else source.with_name(target_name)
+            target_key = str(target.absolute()).casefold()
+            if target_key in seen_targets:
+                errors.append(f"duplicate target path: {target}")
+            seen_targets.add(target_key)
+            if not source.exists():
+                errors.append(f"Source does not exist: {source}")
+            elif not source.is_file() or source.is_symlink():
+                errors.append(f"Source must be a regular non-symlink file: {source}")
+            if target.exists() and target.resolve() != source.resolve():
+                errors.append(f"Target already exists: {target}")
+            plan.append((row, source, target))
+        if errors:
+            return ApplyResult(ok=False, actions=[], errors=errors)
+
+        preview_status = "would_copy" if output_dir else "would_rename"
+        if dry_run:
+            return ApplyResult(
+                ok=True,
+                actions=[{"source": source.name, "target": target.name, "status": preview_status} for _, source, target in plan],
+                errors=[],
+            )
+
         if output_dir:
             output_dir.mkdir(parents=True, exist_ok=True)
-            target = output_dir / target_name
-        source = Path(row.source_path)
-        if dry_run:
-            actions.append({"source": source.name, "target": target.name, "status": "would_rename"})
-            continue
-        if target.exists() and target.resolve() != source.resolve():
-            return ApplyResult(ok=False, actions=actions, errors=[f"Target already exists: {target}"])
-        source.rename(target)
-        row.source_path = str(target.resolve())
-        row.proposed_name = target.name
-        row.review_status = REVIEW_APPLIED
-        actions.append({"source": source.name, "target": target.name, "status": "renamed"})
-    write_manifest_csv(manifest_path, rows)
-    return ApplyResult(ok=True, actions=actions, errors=[])
+        completed: list[tuple[Path, Path, bool]] = []
+        actions: list[dict[str, str]] = []
+        try:
+            for row, source, target in plan:
+                same_path = target.resolve() == source.resolve()
+                if output_dir and not same_path:
+                    shutil.copy2(source, target)
+                    completed.append((source, target, True))
+                    status = "copied"
+                elif not same_path:
+                    source.rename(target)
+                    completed.append((source, target, False))
+                    status = "renamed"
+                else:
+                    status = "already_named"
+                row.source_path = str(target.resolve())
+                row.proposed_name = target.name
+                row.review_status = REVIEW_APPLIED
+                actions.append({"source": source.name, "target": target.name, "status": status})
+            write_manifest_csv(manifest_path, rows)
+        except Exception as exc:  # best-effort rollback keeps batch state coherent
+            rollback_errors: list[str] = []
+            for source, target, was_copy in reversed(completed):
+                try:
+                    if was_copy:
+                        target.unlink(missing_ok=True)
+                    elif target.exists() and not source.exists():
+                        target.rename(source)
+                except Exception as rollback_exc:  # noqa: BLE001
+                    rollback_errors.append(f"Rollback failed for {target.name}: {rollback_exc}")
+            return ApplyResult(
+                ok=False,
+                actions=[],
+                errors=[f"Apply failed before completion: {type(exc).__name__}: {exc}", *rollback_errors],
+            )
+        return ApplyResult(ok=True, actions=actions, errors=[])

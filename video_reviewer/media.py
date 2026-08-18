@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import math
 import shutil
 import subprocess
@@ -117,12 +118,19 @@ def _safe_stem(source_path: Path) -> str:
     return "".join(ch if ch.isalnum() or ch in "._-" else "_" for ch in source_path.stem).strip("_")
 
 
+def _artifact_stem(source_path: Path) -> str:
+    identity = str(source_path.expanduser().absolute()).encode("utf-8", errors="surrogatepass")
+    digest = hashlib.sha256(identity).hexdigest()[:12]
+    suffix = source_path.suffix.lower().lstrip(".") or "video"
+    return f"{_safe_stem(source_path)}_{suffix}_{digest}"
+
+
 def create_proxy_path(tmp_dir: Path, source_path: Path) -> Path:
-    return tmp_dir / f"{_safe_stem(source_path)}.proxy.mp4"
+    return tmp_dir / f"{_artifact_stem(source_path)}.proxy.mp4"
 
 
 def create_frame_dir(tmp_dir: Path, source_path: Path) -> Path:
-    return tmp_dir / f"{_safe_stem(source_path)}_frames"
+    return tmp_dir / f"{_artifact_stem(source_path)}_frames"
 
 
 def run_ffmpeg_proxy(source_path: Path, proxy_path: Path, scale: int) -> None:

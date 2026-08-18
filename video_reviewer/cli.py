@@ -40,10 +40,11 @@ def command_apply(args: argparse.Namespace) -> int:
     for error in result.errors:
         print(error)
     for action in result.actions:
-        if action["status"] == "would_rename":
-            print(f"Would rename: {action['source']} -> {action['target']}")
-        elif action["status"] == "renamed":
-            print(f"Renamed: {action['target']}")
+        if action["status"] in {"would_rename", "would_copy"}:
+            verb = "copy" if action["status"] == "would_copy" else "rename"
+            print(f"Would {verb}: {action['source']} -> {action['target']}")
+        elif action["status"] in {"renamed", "copied", "already_named"}:
+            print(f"{action['status'].replace('_', ' ').title()}: {action['target']}")
     return 0 if result.ok else 1
 
 

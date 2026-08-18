@@ -15,6 +15,7 @@ from pathlib import Path
 from mcp.server.fastmcp import FastMCP
 
 from video_reviewer.manifest import (
+    manifest_transaction,
     REVIEW_APPROVED,
     REVIEW_BLOCKED,
     REVIEW_PENDING,
@@ -153,26 +154,27 @@ def approve_video(
     Returns a confirmation message with the proposed filename.
     """
     manifest = _get_manifest_path()
-    rows = read_manifest_csv(manifest)
-    if row_index < 0 or row_index >= len(rows):
-        return f"Invalid row index: {row_index}"
+    with manifest_transaction(manifest):
+        rows = read_manifest_csv(manifest)
+        if row_index < 0 or row_index >= len(rows):
+            return f"Invalid row index: {row_index}"
 
-    row = rows[row_index]
-    source_name = Path(row.source_path).name
+        row = rows[row_index]
+        source_name = Path(row.source_path).name
 
-    row.description = description.strip()
-    row.client_or_location = client_or_location.strip()
-    if year_month:
-        row.year_month = year_month.strip()
-    row.review_status = REVIEW_APPROVED
+        row.description = description.strip()
+        row.client_or_location = client_or_location.strip()
+        if year_month:
+            row.year_month = year_month.strip()
+        row.review_status = REVIEW_APPROVED
 
-    try:
-        row.proposed_name = build_proposed_name(row)
-    except ValueError as exc:
-        row.review_status = REVIEW_BLOCKED
-        return f"Cannot approve {source_name}: {exc}"
+        try:
+            row.proposed_name = build_proposed_name(row)
+        except ValueError as exc:
+            row.review_status = REVIEW_BLOCKED
+            return f"Cannot approve {source_name}: {exc}"
 
-    write_manifest_csv(manifest, rows)
+        write_manifest_csv(manifest, rows)
     return (
         f"Approved: {source_name}\n"
         f"Proposed name: {row.proposed_name}\n"

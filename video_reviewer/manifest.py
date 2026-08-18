@@ -3,8 +3,23 @@ from __future__ import annotations
 import csv
 import os
 import tempfile
+import threading
+from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 from pathlib import Path
+
+from filelock import FileLock
+
+
+MANIFEST_LOCK = threading.RLock()
+
+
+@contextmanager
+def manifest_transaction(path: Path):
+    """Serialize read-modify-write operations across GUI, CLI, and MCP processes."""
+    lock_path = path.with_name(f".{path.name}.lock")
+    with MANIFEST_LOCK, FileLock(lock_path, timeout=30):
+        yield
 
 
 MANIFEST_COLUMNS = [
@@ -52,19 +67,26 @@ class ManifestRow:
 
 
 def write_manifest_csv(path: Path, rows: list[ManifestRow]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fd, temp_name = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
-    temp_path = Path(temp_name)
-    with os.fdopen(fd, "w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=MANIFEST_COLUMNS)
-        writer.writeheader()
-        for row in rows:
-            writer.writerow(asdict(row))
-    os.replace(temp_path, path)
+    with MANIFEST_LOCK:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        fd, temp_name = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
+        temp_path = Path(temp_name)
+        try:
+            with os.fdopen(fd, "w", newline="", encoding="utf-8") as handle:
+                writer = csv.DictWriter(handle, fieldnames=MANIFEST_COLUMNS)
+                writer.writeheader()
+                for row in rows:
+                    writer.writerow(asdict(row))
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(temp_path, path)
+        finally:
+            temp_path.unlink(missing_ok=True)
 
 
 def read_manifest_csv(path: Path) -> list[ManifestRow]:
-    with path.open("r", newline="", encoding="utf-8") as handle:
-        reader = csv.DictReader(handle)
-        allowed = set(MANIFEST_COLUMNS)
-        return [ManifestRow(**{key: value for key, value in row.items() if key in allowed}) for row in reader]
+    with MANIFEST_LOCK:
+        with path.open("r", newline="", encoding="utf-8") as handle:
+            reader = csv.DictReader(handle)
+            allowed = set(MANIFEST_COLUMNS)
+            return [ManifestRow(**{key: value for key, value in row.items() if key in allowed}) for row in reader]
