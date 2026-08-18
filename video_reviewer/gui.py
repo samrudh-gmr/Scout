@@ -424,6 +424,44 @@ def create_app(manifest_path: Path) -> FastAPI:
         body["provider"] = "gemini"
         return await ai_review_route(body)
 
+    # ── /api/ai/chat ────────────────────────────────────────────────────────
+    @app.post("/api/ai/chat")
+    async def ai_chat_route(body: dict) -> JSONResponse:
+        import anyio
+
+        from video_reviewer.ai_review import AiReviewError
+        from video_reviewer.ai_review.chat import chat_about_row
+
+        provider = (body.get("provider") or "gemini").strip()
+        model = (body.get("model") or "").strip() or None
+        api_key = (body.get("api_key") or "").strip() or load_api_key(provider) or None
+        messages = body.get("messages")
+        try:
+            index = int(body.get("index"))
+        except (TypeError, ValueError):
+            return JSONResponse({"error": "Pick a clip before asking about it."}, status_code=422)
+        if not isinstance(messages, list) or not messages:
+            return JSONResponse({"error": "Ask a question first."}, status_code=422)
+
+        try:
+            reply = await anyio.to_thread.run_sync(
+                lambda: chat_about_row(
+                    manifest_path, index, messages,
+                    provider_id=provider, model=model, api_key=api_key,
+                )
+            )
+        except AiReviewError as exc:
+            return JSONResponse({"error": str(exc), "category": exc.category.value}, status_code=400)
+        except Exception:  # noqa: BLE001 - surface to the GUI
+            logger.exception("AI chat failed")
+            return JSONResponse({"error": "The assistant failed unexpectedly. Try again."}, status_code=500)
+
+        return JSONResponse({
+            "message": reply.message,
+            "set_fields": reply.set_fields,
+            "remembered": reply.remembered,
+        })
+
     # ── legacy page routes ──────────────────────────────────────────────────
     # The standalone AI page is gone; AI naming is step 2 of the one app.
     @app.get("/ai-review")

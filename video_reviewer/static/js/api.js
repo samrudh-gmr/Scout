@@ -42,6 +42,8 @@ export const api = {
 
   aiReview: (body) => post("/ai/review", body),
 
+  aiChat: (body) => post("/ai/chat", body),
+
   saveKey: (provider, apiKey) => post("/settings/key", { provider, api_key: apiKey }),
 
   forgetKey: (provider) =>

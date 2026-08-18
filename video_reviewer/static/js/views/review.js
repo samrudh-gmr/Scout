@@ -4,12 +4,23 @@
 import { api } from "../api.js";
 import { el, clear, add, pill, note, busy } from "../dom.js";
 import { state, view as rowView, edit, assemble, loadRows, counts, isEdited } from "../store.js";
+import { chatPanel } from "../chat.js";
 
 export async function reviewView({ view, dock }) {
   const log = el("div.log");
   const stage = el("div.stage");
   const builder = el("div.builder");
-  const bay = el("div.bay", null, log, stage, builder);
+  const chat = chatPanel({
+    onFields: (fields) => {
+      edit(state.selected, fields);
+      renderBuilder();
+      renderLog();
+      renderDock();
+    },
+    onRemembered: (rule) => flash(note("ok", `Naming guide updated: ${rule}`)),
+  });
+  const side = el("div.side", null, builder, chat);
+  const bay = el("div.bay", null, log, stage, side);
   view.append(bay);
 
   let showingFrame = -1; // -1 means the video itself
@@ -62,6 +73,7 @@ export async function reviewView({ view, dock }) {
     renderStage();
     renderBuilder();
     renderDock();
+    chat.resetFor(index);   // a conversation is about one clip only
     log.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: "nearest" });
   }
 

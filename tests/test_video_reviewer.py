@@ -833,3 +833,110 @@ def test_naming_guide_reaches_the_provider_prompt(tmp_path: Path, monkeypatch) -
 
     # Braces in operator-written markdown must survive rather than blow up .format().
     assert "Always call the client Acme {not a format field}." in prompt
+
+
+def _chat_manifest(tmp_path: Path) -> Path:
+    manifest = tmp_path / "manifest.csv"
+    frame = tmp_path / "frame_00.jpg"
+    frame.write_bytes(b"\xff\xd8\xff\xe0jpegbytes")
+    write_manifest_csv(manifest, [ManifestRow(
+        source_path=str(tmp_path / "clip.mov"),
+        sample_frames=str(frame),
+        year_month="2024-07",
+        description="Sanding Metal Panel",
+        client_or_location="GMR HQ",
+        sequence="001",
+    )])
+    return manifest
+
+
+def test_chat_proposes_fields_without_touching_the_manifest(tmp_path: Path, monkeypatch) -> None:
+    """The assistant proposes; only the operator's Approve writes the manifest."""
+    from video_reviewer.ai_review.chat import chat_about_row
+
+    manifest = _chat_manifest(tmp_path)
+    monkeypatch.setattr("video_reviewer.ai_review.providers.gemini.GeminiProvider._sdk_installed", lambda self: True)
+    monkeypatch.setattr(
+        "video_reviewer.ai_review.providers.gemini.GeminiProvider._generate",
+        lambda self, key, model, prompt, frames: {
+            "message": "That is a fire truck panel, not a metal panel.",
+            "set_fields": {"description": "Sanding Fire Truck Panel"},
+            "remember": None,
+        },
+    )
+
+    reply = chat_about_row(manifest, 0, [{"role": "user", "content": "what is this?"}], api_key="k")
+
+    assert reply.set_fields == {"description": "Sanding Fire Truck Panel"}
+    assert reply.remembered == ""
+    # Unchanged on disk: the proposal only reaches the form.
+    assert read_manifest_csv(manifest)[0].description == "Sanding Metal Panel"
+
+
+def test_chat_remember_appends_one_rule_to_the_naming_guide(tmp_path: Path, monkeypatch) -> None:
+    from video_reviewer import naming_guide
+    from video_reviewer.ai_review.chat import chat_about_row
+
+    guide = tmp_path / "naming_guide.md"
+    guide.write_text("# Naming guide\n\nBase rules.\n", encoding="utf-8")
+    monkeypatch.setattr(naming_guide, "GUIDE_PATH", guide)
+    monkeypatch.setattr("video_reviewer.ai_review.chat.GUIDE_PATH", guide)
+
+    manifest = _chat_manifest(tmp_path)
+    monkeypatch.setattr("video_reviewer.ai_review.providers.gemini.GeminiProvider._sdk_installed", lambda self: True)
+    monkeypatch.setattr(
+        "video_reviewer.ai_review.providers.gemini.GeminiProvider._generate",
+        lambda self, key, model, prompt, frames: {
+            "message": "Noted.",
+            "set_fields": None,
+            "remember": "The client Ursa LBrothers is spelled with a capital B.",
+        },
+    )
+
+    reply = chat_about_row(manifest, 0, [{"role": "user", "content": "it's LBrothers"}], api_key="k")
+
+    assert reply.remembered.startswith("The client Ursa LBrothers")
+    text = guide.read_text(encoding="utf-8")
+    assert "## Operator notes" in text
+    assert "- The client Ursa LBrothers is spelled with a capital B" in text
+
+    # Saying the same thing twice must not stack duplicate lines.
+    chat_about_row(manifest, 0, [{"role": "user", "content": "again"}], api_key="k")
+    assert guide.read_text(encoding="utf-8").count("capital B") == 1
+
+
+def test_chat_sees_the_clip_and_the_guide(tmp_path: Path, monkeypatch) -> None:
+    """Whatever the operator writes in the guide must reach the conversation."""
+    from video_reviewer import naming_guide
+    from video_reviewer.ai_review.chat import chat_about_row
+
+    guide = tmp_path / "naming_guide.md"
+    guide.write_text("# Naming guide\n\nPrefer the term Buff and Polish.\n", encoding="utf-8")
+    monkeypatch.setattr(naming_guide, "GUIDE_PATH", guide)
+
+    captured = {}
+    monkeypatch.setattr("video_reviewer.ai_review.providers.gemini.GeminiProvider._sdk_installed", lambda self: True)
+    monkeypatch.setattr(
+        "video_reviewer.ai_review.providers.gemini.GeminiProvider._generate",
+        lambda self, key, model, prompt, frames: captured.update(prompt=prompt, frames=len(frames))
+        or {"message": "ok", "set_fields": None, "remember": None},
+    )
+
+    chat_about_row(_chat_manifest(tmp_path), 0, [{"role": "user", "content": "which term?"}], api_key="k")
+
+    assert "Prefer the term Buff and Polish." in captured["prompt"]
+    assert "Sanding Metal Panel" in captured["prompt"]      # the clip's current fields
+    assert "Operator: which term?" in captured["prompt"]     # the conversation
+    assert captured["frames"] == 1
+
+
+def test_chat_rejects_an_empty_question(tmp_path: Path) -> None:
+    from video_reviewer.ai_review import AiReviewError
+    from video_reviewer.ai_review.chat import chat_about_row
+
+    try:
+        chat_about_row(_chat_manifest(tmp_path), 0, [{"role": "user", "content": "   "}], api_key="k")
+    except AiReviewError as exc:
+        assert "Ask a question" in str(exc)
+    else:
+        raise AssertionError("Expected an empty question to be rejected")
