@@ -533,6 +533,33 @@ def create_app(manifest_path: Path) -> FastAPI:
     async def gemini_status() -> JSONResponse:
         return await ai_status("gemini")
 
+    # ── /api/naming-guide ───────────────────────────────────────────────────
+    # The guide steers every provider. Editing it is how you correct naming
+    # without touching code, so it is editable from the app as well as on disk.
+    @app.get("/api/naming-guide")
+    async def get_naming_guide() -> JSONResponse:
+        from video_reviewer.naming_guide import GUIDE_PATH, load_guide
+
+        return JSONResponse({"path": str(GUIDE_PATH), "text": load_guide()})
+
+    @app.post("/api/naming-guide")
+    async def put_naming_guide(body: dict) -> JSONResponse:
+        from video_reviewer.naming_guide import GUIDE_PATH, ensure_guide
+
+        text = body.get("text")
+        if not isinstance(text, str) or not text.strip():
+            return JSONResponse({"error": "The naming guide cannot be empty."}, status_code=422)
+        ensure_guide()
+        GUIDE_PATH.write_text(text.strip() + "\n", encoding="utf-8")
+        return JSONResponse({"ok": True, "path": str(GUIDE_PATH)})
+
+    @app.post("/api/naming-guide/reset")
+    async def reset_naming_guide() -> JSONResponse:
+        from video_reviewer.naming_guide import load_guide, reset_guide
+
+        path = reset_guide()
+        return JSONResponse({"ok": True, "path": str(path), "text": load_guide()})
+
     # ── /api/settings/key ───────────────────────────────────────────────────
     # Keys are held server-side in a 0600 file. The browser never receives one
     # back — only whether a key is stored and its masked last four characters.

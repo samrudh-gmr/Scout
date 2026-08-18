@@ -32,7 +32,18 @@ def prompt_for(request: ReviewRequest) -> str:
             for idx, frame in enumerate(request.frames)
         ],
     }
-    return PROMPT_TEMPLATE.format(context=json.dumps(context, indent=2, sort_keys=True))
+    prompt = PROMPT_TEMPLATE.format(context=json.dumps(context, indent=2, sort_keys=True))
+
+    # Appended, never interpolated: the guide and corrections are operator-owned
+    # text and a stray brace would blow up .format().
+    from video_reviewer.config import build_corrections_context
+    from video_reviewer.naming_guide import load_guide
+
+    sections = [prompt, "# Naming guide (authoritative — follow it over your own instincts)", load_guide()]
+    corrections = build_corrections_context()
+    if corrections:
+        sections.append(corrections)
+    return "\n\n".join(sections)
 
 
 def parse_response(data: dict[str, Any]) -> ReviewResponse:

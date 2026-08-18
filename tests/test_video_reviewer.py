@@ -791,3 +791,22 @@ def test_api_key_is_stored_privately_and_never_returned(tmp_path: Path, monkeypa
 
     client.request("DELETE", "/api/settings/key?provider=gemini")
     assert client.get("/api/ai/status?provider=gemini").json()["saved_key"] is False
+
+
+def test_naming_guide_reaches_the_provider_prompt(tmp_path: Path, monkeypatch) -> None:
+    """The operator's guide is what steers naming, so it must be in the prompt."""
+    from video_reviewer import naming_guide
+    from video_reviewer.ai_review.models import ReviewPolicy, ReviewRequest
+    from video_reviewer.ai_review.providers.common import prompt_for
+
+    guide = tmp_path / "naming_guide.md"
+    guide.write_text("# Naming guide\nAlways call the client Acme {not a format field}.\n", encoding="utf-8")
+    monkeypatch.setattr(naming_guide, "GUIDE_PATH", guide)
+
+    prompt = prompt_for(ReviewRequest(
+        source_name="clip.mov", year_month="2024-07", capture_time="",
+        source_hints={}, frames=[], policy=ReviewPolicy(),
+    ))
+
+    # Braces in operator-written markdown must survive rather than blow up .format().
+    assert "Always call the client Acme {not a format field}." in prompt
