@@ -245,7 +245,12 @@ def _optional_int(value) -> int | None:
 def _apply_response(row, response: ReviewResponse, policy: ReviewPolicy) -> None:
     if not response.description or not response.client_or_location:
         raise AiReviewError("AI response was missing description or client/location.", ErrorCategory.MALFORMED_RESPONSE)
-    row.description = response.description.strip()
+    description = response.description.strip()
+    # The SOP prefixes manual work with "Manual". The providers report it as a
+    # flag, so apply it here rather than trusting each model to remember.
+    if response.is_manual and not description.lower().startswith("manual"):
+        description = f"Manual {description}"
+    row.description = description
     row.client_or_location = response.client_or_location.strip()
     confidence = max(0.0, min(1.0, float(response.confidence)))
     row.ai_confidence = f"{confidence:.2f}"

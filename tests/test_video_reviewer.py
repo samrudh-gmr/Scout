@@ -297,7 +297,8 @@ def test_review_rows_approves_high_confidence(monkeypatch, tmp_path: Path) -> No
     result = results[0]
     assert result.ok is True
     assert result.status == REVIEW_APPROVED
-    assert result.proposed_name == "2024-07_Sanding Metal Panel_GMR HQ_001.mov"
+    # is_manual is true, so the SOP's Manual prefix must be applied.
+    assert result.proposed_name == "2024-07_Manual Sanding Metal Panel_GMR HQ_001.mov"
     assert result.confidence == 0.92
 
     saved = read_manifest_csv(manifest)
@@ -791,6 +792,28 @@ def test_api_key_is_stored_privately_and_never_returned(tmp_path: Path, monkeypa
 
     client.request("DELETE", "/api/settings/key?provider=gemini")
     assert client.get("/api/ai/status?provider=gemini").json()["saved_key"] is False
+
+
+def test_robot_footage_keeps_description_unprefixed(monkeypatch, tmp_path: Path) -> None:
+    """Only manual work gets the prefix — robot footage is the default case."""
+    from video_reviewer import gemini_review
+
+    manifest = _manifest_with_frame(tmp_path)
+    monkeypatch.setattr("video_reviewer.ai_review.providers.gemini.GeminiProvider._sdk_installed", lambda self: True)
+    monkeypatch.setattr(
+        "video_reviewer.ai_review.providers.gemini.GeminiProvider._generate",
+        lambda self, key, model, request: {
+            "description": "Sanding Metal Panel",
+            "client_or_location": "GMR HQ",
+            "is_manual": False,
+            "confidence": 0.92,
+            "rationale": "Robot sanding a panel.",
+            "flags": [],
+        },
+    )
+
+    result = gemini_review.review_rows(manifest, [0], api_key="test-key")[0]
+    assert result.proposed_name == "2024-07_Sanding Metal Panel_GMR HQ_001.mov"
 
 
 def test_naming_guide_reaches_the_provider_prompt(tmp_path: Path, monkeypatch) -> None:
