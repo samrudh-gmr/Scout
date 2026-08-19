@@ -173,7 +173,7 @@ export async function reviewView({ view, dock }) {
     const fields = [
       { key: "date", field: "year_month", label: "Year-month", placeholder: "2024-07" },
       { key: "part", field: "part", label: "Part (optional)", placeholder: "Aluminum Wheel" },
-      { key: "desc", field: "description", label: "Description", placeholder: "Robotic Sanding Composite Panel" },
+      { key: "desc", field: "description", label: "Process / description", placeholder: "Sanding" },
       { key: "industry", field: "industry", label: "Industry (only if part is present)", placeholder: "" },
       { key: "client", field: "client_or_location", label: "Client / location", placeholder: "SOLV California" },
       { key: "seq", field: "sequence", label: "Sequence (automatic)", placeholder: "001" },

@@ -24,7 +24,7 @@ concrete — rules and vocabulary, not prose.
 `YYYY-MM_[Part]_[Description]_[IndustryIfPartPresent]_[ClientOrLocation]_SequenceNumber.extension`
 
 Examples:
-- `2026-08_Aluminum Wheel_Sanding Automotive Body Panel_Specialty-Vehicle_ClientName_001.mov`
+- `2026-08_Aluminum Wheel_Sanding_Specialty-Vehicle_ClientName_001.mov`
 - `2026-08_Sanding Surface Test_ClientName_002.mov`
 
 - Underscores separate fields and appear nowhere else.
@@ -35,13 +35,15 @@ Examples:
 
 ## Description
 
-Keep the established **Action + Object** Description behavior. Be specific —
-these names are searched.
+When Part is populated, Description is only the concise process/action, such as
+`Sanding` or `Surface Finishing`. When Part is empty, keep the established
+**Action + Object** Description behavior. Be specific — these names are
+searched.
 
 - When a recognizable part is visible, put its specific name in the separate
   Part field, e.g. `Aluminum Wheel`, `Aircraft Bracket`, or `Boat Propeller`.
 - Do not force a generic description such as `Surface Finishing Test` when the
-  footage supports a useful object description.
+  footage supports a useful object description and Part is empty.
 - **Assume the footage is of robots.** Do not write "Robot", "Robot Arm", or
   "Robotic" — it is the default and it makes every name look alike.
 - Include an object or surface identifier whenever you can see one, even a
@@ -114,12 +116,12 @@ and the filename genuinely give you nothing.
 ## Reference filenames
 
 ```
-2024-03_Composite Aircraft Panel_Sanding Composite Aircraft Panel_Aerospace-and-Defense_GMR HQ_001.mov
-2024-04_Steel Column_Grinding Steel Column_Architecture_FABTECH Event_001.mov
-2024-06_Bicycle Frame_Buff and Polish Bicycle Frame_Consumer-and-Recreation_GMR HQ_001.mov
-2023-09_Welded Metal Frame_Grinding Welded Metal Frame_General-Manufacturing_Performance Composites_001.mov
-2024-07_Fiberglass Boat Hull_Buff and Polish Fiberglass Boat Hull_Marine-and-Boat-Building_GMR HQ_001.mov
-2022-12_Ambulance Body_Sanding Ambulance Body_Specialty-Vehicle_Life Line_001.mov
+2024-03_Composite Aircraft Panel_Sanding_Aerospace-and-Defense_GMR HQ_001.mov
+2024-04_Steel Column_Grinding_Architecture_FABTECH Event_001.mov
+2024-06_Bicycle Frame_Buff and Polish_Consumer-and-Recreation_GMR HQ_001.mov
+2023-09_Welded Metal Frame_Grinding_General-Manufacturing_Performance Composites_001.mov
+2024-07_Fiberglass Boat Hull_Buff and Polish_Marine-and-Boat-Building_GMR HQ_001.mov
+2022-12_Ambulance Body_Sanding_Specialty-Vehicle_Life Line_001.mov
 ```
 """
 
@@ -130,10 +132,10 @@ The current convention supersedes any older schema above:
 
 `YYYY-MM_[Part]_[Description]_[IndustryIfPartPresent]_[ClientOrLocation]_SequenceNumber.extension`
 
-Part and Industry are optional. Keep the established Action + Object behavior
-for Description. If a recognizable part is present, put its specific name in
-Part and choose exactly one approved Industry category. If no part is present,
-leave both optional fields empty and omit them from the filename.
+Part and Industry are optional. If a recognizable part is present, put its
+specific name in Part, use only the process/action in Description, and choose
+exactly one approved Industry category. If no part is present, leave both
+optional fields empty and keep the established Action + Object Description.
 Industry categories: Specialty Vehicle; Marine & Boat Building; General
 Manufacturing; Consumer and Recreation; Architecture; Aerospace & Defense.
 Render spaces and `&` as hyphens/`and` in filenames, for example

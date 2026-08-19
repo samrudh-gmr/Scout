@@ -22,7 +22,7 @@ Metadata / source hints:
 
 Determine, from the frames and hints:
 - part: the specific recognizable industrial part, such as "Aluminum Wheel", "Aircraft Bracket", or "Boat Propeller". Use an empty string if no distinct part can be identified.
-- description: an "Action + Object" phrase for the process shown, in Title Case, e.g. "Sanding Automotive Body Panel". Keep the established description behavior; do not force a generic description such as "Surface Finishing Test" when the footage supports a useful object description.
+- description: when part is non-empty, provide only the concise process/action in Title Case, e.g. "Sanding" or "Surface Finishing". When part is empty, keep the established "Action + Object" description behavior, e.g. "Sanding Automotive Body Panel". Do not force a generic description such as "Surface Finishing Test" when the footage supports a useful object description.
 - industry: if and only if part is non-empty, choose exactly one of: "Specialty Vehicle", "Marine & Boat Building", "General Manufacturing", "Consumer and Recreation", "Architecture", "Aerospace & Defense". If part is empty, use an empty string.
 - client_or_location: the client company or site name. Prefer filename/location hints. Use "Unknown" only if genuinely impossible.
 - is_manual: true if a human operator performing the process is visible.
