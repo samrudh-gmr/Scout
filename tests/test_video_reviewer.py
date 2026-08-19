@@ -668,6 +668,20 @@ def test_pick_dir_preserves_filesystem_root(monkeypatch, tmp_path: Path) -> None
     assert response.json() == {"path": "/", "cancelled": False}
 
 
+def test_asgi_factory_uses_default_manifest_path(monkeypatch, tmp_path: Path) -> None:
+    from fastapi.testclient import TestClient
+    from video_reviewer import gui
+
+    manifest = tmp_path / "default" / "manifest.csv"
+    monkeypatch.setattr(gui, "_DEFAULT_MANIFEST_PATH", manifest)
+
+    response = TestClient(gui.create_app()).get("/api/rows")
+
+    assert response.status_code == 200
+    assert response.json()["manifest_path"] == str(manifest.resolve())
+    assert manifest.exists()
+
+
 def test_unexpected_ai_error_does_not_leak_exception_text(monkeypatch, tmp_path: Path) -> None:
     from fastapi.testclient import TestClient
     from video_reviewer.gui import create_app

@@ -28,6 +28,7 @@ from video_reviewer.workflow import assign_sequences_by_name
 logger = logging.getLogger("video_renamer")
 
 _STATIC_DIR = Path(__file__).parent / "static"
+_DEFAULT_MANIFEST_PATH = Path.home() / ".video-renamer" / "manifest.csv"
 
 
 def _safe_artifact(path: Path, allowed_suffixes: set[str]) -> bool:
@@ -75,7 +76,13 @@ def _pick_directory_sync() -> subprocess.CompletedProcess[str]:
         env.pop(name, None)
     return subprocess.run(command, capture_output=True, text=True, timeout=20, check=False, env=env)
 
-def create_app(manifest_path: Path) -> FastAPI:
+def create_app(manifest_path: Path | None = None) -> FastAPI:
+    """Create the local ASGI app.
+
+    The optional path keeps ``uvicorn video_reviewer.gui:create_app --factory``
+    usable while the CLI can still open a caller-selected manifest.
+    """
+    manifest_path = (manifest_path or _DEFAULT_MANIFEST_PATH).expanduser().resolve()
     if not manifest_path.exists():
         write_manifest_csv(manifest_path, [])
     app = FastAPI()
