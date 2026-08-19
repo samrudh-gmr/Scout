@@ -21,7 +21,7 @@ Metadata / source hints:
 {context}
 
 Determine, from the frames and hints:
-- description: an "Action + Object" phrase for the process shown, in Title Case. If a recognizable part is visible, include its specific name, e.g. "Surface Finishing Aluminum Wheel" or "Drilling Aircraft Bracket". Do not use generic terms like part or component when a specific identification is reasonably confident.
+- description: a specific "Part + Action" phrase when a recognizable part is visible, in Title Case, e.g. "Aluminum Wheel Surface Finishing" or "Aircraft Bracket Drilling". If no identifiable part is visible, use a useful process description such as "Surface Finishing Test". Do not use generic terms like part, component, or metal piece when a specific identification is reasonably confident.
 - industry: if and only if a recognizable part is present, choose exactly one of: "Specialty Vehicle", "Marine & Boat Building", "General Manufacturing", "Consumer and Recreation", "Architecture", "Aerospace & Defense". If no identifiable part is present, use an empty string.
 - client_or_location: the client company or site name. Prefer filename/location hints. Use "Unknown" only if genuinely impossible.
 - is_manual: true if a human operator performing the process is visible.

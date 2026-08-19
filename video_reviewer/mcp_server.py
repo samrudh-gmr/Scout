@@ -128,7 +128,7 @@ def review_video(row_index: int) -> list[dict]:
         "type": "text",
         "text": (
             "\nPlease analyze these frames and provide:\n"
-            "1. **description**: Action + Object phrase (e.g., 'Sanding Automotive Body Panel')\n"
+            "1. **description**: Part + Action when a recognizable part is visible (e.g., 'Aluminum Wheel Surface Finishing'); otherwise a useful process description\n"
             "2. **industry**: One approved industry category only when a recognizable part is present; otherwise empty\n"
             "3. **client_or_location**: Client company or site name\n"
             "4. Whether this is a manual process (human operator visible)\n\n"
@@ -150,7 +150,7 @@ def approve_video(
 
     Args:
         row_index: The index of the video row in the manifest.
-        description: The Action + Object description (e.g., 'Sanding Automotive Body Panel').
+        description: Part + Action when a recognizable part is visible (e.g., 'Aluminum Wheel Surface Finishing'); otherwise a useful process description.
         client_or_location: The client company or site name.
         year_month: Optional YYYY-MM override. If empty, uses the existing value.
 

@@ -24,7 +24,7 @@ concrete — rules and vocabulary, not prose.
 `YYYY-MM_Description_IndustryIfPartPresent_ClientOrLocation_SequenceNumber.extension`
 
 Examples:
-- `2026-08_Surface Finishing Aluminum Wheel_Specialty-Vehicle_ClientName_001.mov`
+- `2026-08_Aluminum Wheel Surface Finishing_Specialty-Vehicle_ClientName_001.mov`
 - `2026-08_Surface Finishing Test_ClientName_002.mov`
 
 - Underscores separate fields and appear nowhere else.
@@ -34,9 +34,13 @@ Examples:
 
 ## Description
 
-Write **Action + Object** in Title Case. Be specific — these names are searched.
+When a recognizable part is visible, write **Part + Action** in Title Case. Be
+specific — these names are searched. When no identifiable part is visible, use
+a useful process description such as `Surface Finishing Test`.
 
-- Describe what is visibly happening to a visible object or surface.
+- Describe the specific part first, followed by the visible process, when a part
+  can be identified: `Aluminum Wheel Surface Finishing`, `Aircraft Bracket
+  Drilling`, `Boat Propeller Polishing`.
 - **Assume the footage is of robots.** Do not write "Robot", "Robot Arm", or
   "Robotic" — it is the default and it makes every name look alike.
 - Include an object or surface identifier whenever you can see one, even a
@@ -125,9 +129,11 @@ The current convention supersedes any older schema above:
 
 `YYYY-MM_Description_IndustryIfPartPresent_ClientOrLocation_SequenceNumber.extension`
 
-If a recognizable industrial part is visible, include its specific name in
-Description and choose exactly one approved Industry category. If no
-recognizable part is present, leave Industry empty and omit that segment.
+If a recognizable industrial part is visible, put its specific name first in
+Description, followed by the action/process (for example, `Aluminum Wheel
+Surface Finishing`). Choose exactly one approved Industry category. If no
+recognizable part is present, use a useful process description, leave Industry
+empty, and omit that segment.
 Industry categories: Specialty Vehicle; Marine & Boat Building; General
 Manufacturing; Consumer and Recreation; Architecture; Aerospace & Defense.
 Render spaces and `&` as hyphens/`and` in filenames, for example
@@ -144,6 +150,15 @@ def _is_untouched_legacy_guide(text: str) -> bool:
     ))
 
 
+def _is_previous_industry_guide(text: str) -> bool:
+    """Recognize Scout's first industry-guide version for a clean correction."""
+    return all(marker in text for marker in (
+        "`YYYY-MM_Description_IndustryIfPartPresent_ClientOrLocation_SequenceNumber.extension`",
+        "`2026-08_Surface Finishing Aluminum Wheel_Specialty-Vehicle_ClientName_001.mov`",
+        "Write **Action + Object** in Title Case",
+    ))
+
+
 def ensure_guide() -> Path:
     """Create the guide on first use. An existing file is never overwritten."""
     if not GUIDE_PATH.exists():
@@ -151,7 +166,7 @@ def ensure_guide() -> Path:
         GUIDE_PATH.write_text(DEFAULT_GUIDE, encoding="utf-8")
     else:
         existing = GUIDE_PATH.read_text(encoding="utf-8")
-        if _is_untouched_legacy_guide(existing):
+        if _is_untouched_legacy_guide(existing) or _is_previous_industry_guide(existing):
             GUIDE_PATH.write_text(DEFAULT_GUIDE, encoding="utf-8")
     return GUIDE_PATH
 
