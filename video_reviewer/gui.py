@@ -508,14 +508,14 @@ def launch_gui(manifest_path: Path, host: str, port: int) -> None:
 
     if host not in {"127.0.0.1", "localhost", "::1"}:
         raise RuntimeError(
-            "Video Renamer has no remote authentication and can only bind to localhost. "
+            "Scout has no remote authentication and can only bind to localhost. "
             "Use --host 127.0.0.1."
         )
     selected_port = _choose_port(host, port)
     if selected_port != port:
-        print(f"Port {port} is already in use; starting Video Renamer on port {selected_port} instead.")
+        print(f"Port {port} is already in use; starting Scout on port {selected_port} instead.")
     url = f"http://{host}:{selected_port}/ai-review"
-    print(f"Opening Video Renamer: {url}")
+    print(f"Opening 🐾 Scout: {url}")
     # Safari is notably unforgiving when asked to open a localhost address
     # before the listener exists: the first interaction can land on its error
     # page instead of the app. Start Uvicorn first, wait for the socket, then

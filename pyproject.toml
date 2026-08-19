@@ -1,5 +1,5 @@
 [project]
-name = "video-renamer"
+name = "scout"
 version = "0.2.0"
 description = "AI-assisted batch video reviewer and renamer for the GMR SOP."
 requires-python = ">=3.12"
@@ -17,6 +17,7 @@ dependencies = [
 ]
 
 [project.scripts]
+scout = "video_reviewer.cli:main"
 video-renamer = "video_reviewer.cli:main"
 
 [build-system]
