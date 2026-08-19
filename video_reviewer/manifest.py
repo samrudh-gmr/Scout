@@ -27,6 +27,7 @@ MANIFEST_COLUMNS = [
     "proxy_path",
     "sample_frames",
     "year_month",
+    "part",
     "description",
     "industry",
     "client_or_location",
@@ -54,6 +55,7 @@ class ManifestRow:
     proxy_path: str = ""
     sample_frames: str = ""
     year_month: str = ""
+    part: str = ""
     description: str = ""
     industry: str = ""
     client_or_location: str = ""

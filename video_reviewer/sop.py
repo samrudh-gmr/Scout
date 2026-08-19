@@ -64,11 +64,21 @@ def validate_industry(value: str) -> str:
     return value
 
 
+def validate_optional_field(name: str, value: str) -> str:
+    value = clean_field(value)
+    if not value:
+        return ""
+    return validate_field(name, value)
+
+
 def build_proposed_name(row: ManifestRow) -> str:
     ext = Path(row.source_path).suffix
+    if row.industry and not row.part:
+        raise ValueError("industry requires a part")
     return (
         f"{validate_year_month(row.year_month)}_"
-        f"{validate_field('description', row.description)}_"
+        + (f"{validate_optional_field('part', row.part)}_" if row.part else "")
+        + f"{validate_field('description', row.description)}_"
         + (f"{validate_industry(row.industry).replace(' ', '-').replace('&', 'and')}_" if row.industry else "")
         + f"{validate_field('client_or_location', row.client_or_location)}_"
         + f"{validate_sequence(row.sequence)}{ext}"

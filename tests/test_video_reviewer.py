@@ -466,30 +466,61 @@ def test_build_proposed_name_includes_industry_when_part_is_present() -> None:
     row = ManifestRow(
         source_path="/tmp/wheel.mov",
         year_month="2026-08",
-        description="Aluminum Wheel Surface Finishing",
+        part="Aluminum Wheel",
+        description="Sanding Automotive Body Panel",
         industry="Specialty Vehicle",
         client_or_location="ClientName",
         sequence="1",
     )
-    assert build_proposed_name(row) == "2026-08_Aluminum Wheel Surface Finishing_Specialty-Vehicle_ClientName_001.mov"
+    assert build_proposed_name(row) == "2026-08_Aluminum Wheel_Sanding Automotive Body Panel_Specialty-Vehicle_ClientName_001.mov"
 
 
 def test_build_proposed_name_omits_empty_industry() -> None:
     row = ManifestRow(
         source_path="/tmp/test.mov",
         year_month="2026-08",
-        description="Surface Finishing Test",
+        description="Sanding Surface Test",
         industry="",
         client_or_location="ClientName",
         sequence="2",
     )
-    assert build_proposed_name(row) == "2026-08_Surface Finishing Test_ClientName_002.mov"
+    assert build_proposed_name(row) == "2026-08_Sanding Surface Test_ClientName_002.mov"
+
+
+def test_build_proposed_name_includes_part_without_industry() -> None:
+    row = ManifestRow(
+        source_path="/tmp/bracket.mov",
+        year_month="2026-08",
+        part="Aircraft Bracket",
+        description="Sanding Composite Panel",
+        client_or_location="ClientName",
+        sequence="3",
+    )
+    assert build_proposed_name(row) == "2026-08_Aircraft Bracket_Sanding Composite Panel_ClientName_003.mov"
+
+
+def test_build_proposed_name_rejects_industry_without_part() -> None:
+    row = ManifestRow(
+        source_path="/tmp/invalid.mov",
+        year_month="2026-08",
+        description="Sanding Composite Panel",
+        industry="Aerospace & Defense",
+        client_or_location="ClientName",
+        sequence="1",
+    )
+    try:
+        build_proposed_name(row)
+    except ValueError as exc:
+        assert str(exc) == "industry requires a part"
+    else:
+        raise AssertionError("Expected industry without part to be rejected")
 
 
 def test_build_proposed_name_rejects_unknown_industry() -> None:
     row = ManifestRow(
         source_path="/tmp/part.mov",
         year_month="2026-08",
+        part="Bracket",
         description="Finishing Bracket",
         industry="Automotive",
         client_or_location="ClientName",
@@ -933,7 +964,8 @@ def test_save_persists_optional_industry_segment(tmp_path: Path) -> None:
     response = client.post("/api/save", json={"rows": [{
         "index": 0,
         "checked": True,
-        "description": "Aluminum Wheel Surface Finishing",
+        "part": "Aluminum Wheel",
+        "description": "Sanding Automotive Body Panel",
         "industry": "Specialty Vehicle",
         "client_or_location": "ClientName",
         "year_month": "2026-08",
@@ -943,7 +975,7 @@ def test_save_persists_optional_industry_segment(tmp_path: Path) -> None:
     assert response.status_code == 200, response.json()
     row = read_manifest_csv(manifest)[0]
     assert row.industry == "Specialty Vehicle"
-    assert row.proposed_name == "2026-08_Aluminum Wheel Surface Finishing_Specialty-Vehicle_ClientName_001.mov"
+    assert row.proposed_name == "2026-08_Aluminum Wheel_Sanding Automotive Body Panel_Specialty-Vehicle_ClientName_001.mov"
 
 
 def test_api_key_is_stored_privately_and_never_returned(tmp_path: Path, monkeypatch) -> None:

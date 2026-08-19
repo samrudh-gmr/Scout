@@ -90,6 +90,7 @@ def review_video(row_index: int) -> list[dict]:
         "sequence": row.sequence,
         "capture_time": row.capture_time,
         "current_status": row.review_status,
+        "current_part": row.part or None,
         "current_description": row.description or None,
         "current_industry": row.industry or None,
         "current_client_or_location": row.client_or_location or None,
@@ -128,10 +129,11 @@ def review_video(row_index: int) -> list[dict]:
         "type": "text",
         "text": (
             "\nPlease analyze these frames and provide:\n"
-            "1. **description**: Part + Action when a recognizable part is visible (e.g., 'Aluminum Wheel Surface Finishing'); otherwise a useful process description\n"
-            "2. **industry**: One approved industry category only when a recognizable part is present; otherwise empty\n"
-            "3. **client_or_location**: Client company or site name\n"
-            "4. Whether this is a manual process (human operator visible)\n\n"
+            "1. **part**: Specific recognizable industrial part, or empty if none\n"
+            "2. **description**: The established Action + Object phrase (e.g., 'Sanding Automotive Body Panel')\n"
+            "3. **industry**: One approved industry category only when part is present; otherwise empty\n"
+            "4. **client_or_location**: Client company or site name\n"
+            "5. Whether this is a manual process (human operator visible)\n\n"
             "Then call `approve_video` with your classification."
         ),
     })
@@ -145,12 +147,14 @@ def approve_video(
     client_or_location: str,
     year_month: str = "",
     industry: str = "",
+    part: str = "",
 ) -> str:
     """Approve a video with the given classification and mark it as approved.
 
     Args:
         row_index: The index of the video row in the manifest.
-        description: Part + Action when a recognizable part is visible (e.g., 'Aluminum Wheel Surface Finishing'); otherwise a useful process description.
+        part: Optional specific recognizable part, or empty when no distinct part can be identified.
+        description: The established Action + Object description (e.g., 'Sanding Automotive Body Panel').
         client_or_location: The client company or site name.
         year_month: Optional YYYY-MM override. If empty, uses the existing value.
 
@@ -166,7 +170,10 @@ def approve_video(
         source_name = Path(row.source_path).name
 
         row.description = description.strip()
+        row.part = part.strip()
         row.industry = industry.strip()
+        if not row.part:
+            row.industry = ""
         row.client_or_location = client_or_location.strip()
         if year_month:
             row.year_month = year_month.strip()

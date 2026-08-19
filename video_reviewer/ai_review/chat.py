@@ -41,8 +41,8 @@ from video_reviewer.naming_guide import GUIDE_PATH, load_guide
 # deliberately smaller than the review preset's.
 CHAT_FRAMES = 5
 MAX_HISTORY = 12
-EDITABLE_FIELDS = ("description", "industry", "client_or_location", "year_month", "sequence")
-GLOBAL_EDITABLE_FIELDS = ("description", "industry", "client_or_location", "year_month")
+EDITABLE_FIELDS = ("part", "description", "industry", "client_or_location", "year_month", "sequence")
+GLOBAL_EDITABLE_FIELDS = ("part", "description", "industry", "client_or_location", "year_month")
 MAX_BATCH_CONTEXT = 200
 
 # Asked for on the turn that carries the images; replayed as text on every turn

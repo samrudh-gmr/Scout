@@ -21,26 +21,27 @@ concrete — rules and vocabulary, not prose.
 
 ## Schema
 
-`YYYY-MM_Description_IndustryIfPartPresent_ClientOrLocation_SequenceNumber.extension`
+`YYYY-MM_[Part]_[Description]_[IndustryIfPartPresent]_[ClientOrLocation]_SequenceNumber.extension`
 
 Examples:
-- `2026-08_Aluminum Wheel Surface Finishing_Specialty-Vehicle_ClientName_001.mov`
-- `2026-08_Surface Finishing Test_ClientName_002.mov`
+- `2026-08_Aluminum Wheel_Sanding Automotive Body Panel_Specialty-Vehicle_ClientName_001.mov`
+- `2026-08_Sanding Surface Test_ClientName_002.mov`
 
 - Underscores separate fields and appear nowhere else.
-- Spaces are allowed inside Description and Client/Location.
+- Part and Industry are optional fields and are omitted when empty.
+- Spaces are allowed inside Part, Description, and Client/Location.
 - Never use: `/ \\ : * ? " < > |`
 - No leading or trailing spaces, no double underscores.
 
 ## Description
 
-When a recognizable part is visible, write **Part + Action** in Title Case. Be
-specific — these names are searched. When no identifiable part is visible, use
-a useful process description such as `Surface Finishing Test`.
+Keep the established **Action + Object** Description behavior. Be specific —
+these names are searched.
 
-- Describe the specific part first, followed by the visible process, when a part
-  can be identified: `Aluminum Wheel Surface Finishing`, `Aircraft Bracket
-  Drilling`, `Boat Propeller Polishing`.
+- When a recognizable part is visible, put its specific name in the separate
+  Part field, e.g. `Aluminum Wheel`, `Aircraft Bracket`, or `Boat Propeller`.
+- Do not force a generic description such as `Surface Finishing Test` when the
+  footage supports a useful object description.
 - **Assume the footage is of robots.** Do not write "Robot", "Robot Arm", or
   "Robotic" — it is the default and it makes every name look alike.
 - Include an object or surface identifier whenever you can see one, even a
@@ -113,12 +114,12 @@ and the filename genuinely give you nothing.
 ## Reference filenames
 
 ```
-2024-03_Sanding Composite Aircraft Panel_Aerospace-and-Defense_GMR HQ_001.mov
-2024-04_Grinding Steel Column_Architecture_FABTECH Event_001.mov
-2024-06_Buff and Polish Bicycle Frame_Consumer-and-Recreation_GMR HQ_001.mov
-2023-09_Grinding Welded Metal Frame_General-Manufacturing_Performance Composites_001.mov
-2024-07_Buff and Polish Fiberglass Boat Hull_Marine-and-Boat-Building_GMR HQ_001.mov
-2022-12_Sanding Ambulance Body_Specialty-Vehicle_Life Line_001.mov
+2024-03_Composite Aircraft Panel_Sanding Composite Aircraft Panel_Aerospace-and-Defense_GMR HQ_001.mov
+2024-04_Steel Column_Grinding Steel Column_Architecture_FABTECH Event_001.mov
+2024-06_Bicycle Frame_Buff and Polish Bicycle Frame_Consumer-and-Recreation_GMR HQ_001.mov
+2023-09_Welded Metal Frame_Grinding Welded Metal Frame_General-Manufacturing_Performance Composites_001.mov
+2024-07_Fiberglass Boat Hull_Buff and Polish Fiberglass Boat Hull_Marine-and-Boat-Building_GMR HQ_001.mov
+2022-12_Ambulance Body_Sanding Ambulance Body_Specialty-Vehicle_Life Line_001.mov
 ```
 """
 
@@ -127,13 +128,12 @@ CURRENT_CONVENTION_OVERLAY = """## Current filename convention — Scout
 
 The current convention supersedes any older schema above:
 
-`YYYY-MM_Description_IndustryIfPartPresent_ClientOrLocation_SequenceNumber.extension`
+`YYYY-MM_[Part]_[Description]_[IndustryIfPartPresent]_[ClientOrLocation]_SequenceNumber.extension`
 
-If a recognizable industrial part is visible, put its specific name first in
-Description, followed by the action/process (for example, `Aluminum Wheel
-Surface Finishing`). Choose exactly one approved Industry category. If no
-recognizable part is present, use a useful process description, leave Industry
-empty, and omit that segment.
+Part and Industry are optional. Keep the established Action + Object behavior
+for Description. If a recognizable part is present, put its specific name in
+Part and choose exactly one approved Industry category. If no part is present,
+leave both optional fields empty and omit them from the filename.
 Industry categories: Specialty Vehicle; Marine & Boat Building; General
 Manufacturing; Consumer and Recreation; Architecture; Aerospace & Defense.
 Render spaces and `&` as hyphens/`and` in filenames, for example
@@ -159,6 +159,15 @@ def _is_previous_industry_guide(text: str) -> bool:
     ))
 
 
+def _is_previous_part_action_guide(text: str) -> bool:
+    """Recognize the intermediate Part + Action guide for a clean correction."""
+    return all(marker in text for marker in (
+        "`YYYY-MM_Description_IndustryIfPartPresent_ClientOrLocation_SequenceNumber.extension`",
+        "`2026-08_Aluminum Wheel Surface Finishing_Specialty-Vehicle_ClientName_001.mov`",
+        "write **Part + Action** in Title Case",
+    ))
+
+
 def ensure_guide() -> Path:
     """Create the guide on first use. An existing file is never overwritten."""
     if not GUIDE_PATH.exists():
@@ -166,7 +175,7 @@ def ensure_guide() -> Path:
         GUIDE_PATH.write_text(DEFAULT_GUIDE, encoding="utf-8")
     else:
         existing = GUIDE_PATH.read_text(encoding="utf-8")
-        if _is_untouched_legacy_guide(existing) or _is_previous_industry_guide(existing):
+        if _is_untouched_legacy_guide(existing) or _is_previous_industry_guide(existing) or _is_previous_part_action_guide(existing):
             GUIDE_PATH.write_text(DEFAULT_GUIDE, encoding="utf-8")
     return GUIDE_PATH
 

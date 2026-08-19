@@ -21,17 +21,18 @@ Metadata / source hints:
 {context}
 
 Determine, from the frames and hints:
-- description: a specific "Part + Action" phrase when a recognizable part is visible, in Title Case, e.g. "Aluminum Wheel Surface Finishing" or "Aircraft Bracket Drilling". If no identifiable part is visible, use a useful process description such as "Surface Finishing Test". Do not use generic terms like part, component, or metal piece when a specific identification is reasonably confident.
-- industry: if and only if a recognizable part is present, choose exactly one of: "Specialty Vehicle", "Marine & Boat Building", "General Manufacturing", "Consumer and Recreation", "Architecture", "Aerospace & Defense". If no identifiable part is present, use an empty string.
+- part: the specific recognizable industrial part, such as "Aluminum Wheel", "Aircraft Bracket", or "Boat Propeller". Use an empty string if no distinct part can be identified.
+- description: an "Action + Object" phrase for the process shown, in Title Case, e.g. "Sanding Automotive Body Panel". Keep the established description behavior; do not force a generic description such as "Surface Finishing Test" when the footage supports a useful object description.
+- industry: if and only if part is non-empty, choose exactly one of: "Specialty Vehicle", "Marine & Boat Building", "General Manufacturing", "Consumer and Recreation", "Architecture", "Aerospace & Defense". If part is empty, use an empty string.
 - client_or_location: the client company or site name. Prefer filename/location hints. Use "Unknown" only if genuinely impossible.
 - is_manual: true if a human operator performing the process is visible.
 - confidence: confidence from 0.0 to 1.0 in description + client/location.
 - rationale: one short sentence explaining the classification.
 - flags: short uncertainty flags, e.g. ["client_unknown", "blurry_frames"].
 
-Hard constraints: description, industry (when non-empty), and client_or_location MUST NOT contain underscores or any of these characters: / \\ : * ? " < > |. Description and client_or_location may not be empty. Industry must be empty or one of the six exact categories above.
+Hard constraints: part and industry (when non-empty), description, and client_or_location MUST NOT contain underscores or any of these characters: / \\ : * ? " < > |. Description and client_or_location may not be empty. Industry must be empty or one of the six exact categories above.
 
-Respond with ONLY a JSON object with exactly these keys: description, industry, client_or_location, is_manual, confidence, rationale, flags."""
+Respond with ONLY a JSON object with exactly these keys: part, description, industry, client_or_location, is_manual, confidence, rationale, flags."""
 
 
 class GeminiProvider:
@@ -175,6 +176,7 @@ class GeminiProvider:
             client_or_location=str(data.get("client_or_location", "")).strip(),
             is_manual=(data.get("is_manual") is True or str(data.get("is_manual", "")).strip().lower() in {"true", "1", "yes"}),
             confidence=max(0.0, min(1.0, confidence)),
+            part=str(data.get("part", "")).strip(),
             industry=str(data.get("industry", "")).strip(),
             rationale=str(data.get("rationale", "")).strip(),
             flags=[str(flag).strip() for flag in flags if str(flag).strip()],

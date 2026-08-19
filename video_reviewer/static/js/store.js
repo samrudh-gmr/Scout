@@ -99,22 +99,25 @@ export function checkIndustry(value) {
   return { value: clean, filenameValue: clean.replaceAll(" ", "-").replace("&", "and"), error: "" };
 }
 
-/**
- * Break a row into the four SOP segments plus its extension, each carrying its
- * own error. Views render this directly — that is the name builder.
- */
+export function checkOptionalSegment(name, value) {
+  const clean = String(value || "").trim();
+  if (!clean) return { value: "", filenameValue: "", error: "" };
+  const checked = checkSegment(name, clean);
+  return { ...checked, filenameValue: checked.value };
+}
 export function assemble(row) {
   if (!row) return { segments: [], errors: ["No clip selected"], name: "" };
   const parts = [
     { key: "date", label: "year-month", ...checkYearMonth(row.year_month) },
+    { key: "part", label: "part", ...checkOptionalSegment("part", row.part) },
     { key: "desc", label: "description", ...checkSegment("description", row.description) },
-    { key: "industry", label: "industry", ...checkIndustry(row.industry) },
+    { key: "industry", label: "industry", ...checkIndustry(row.part ? row.industry : "") },
     { key: "client", label: "client / location", ...checkSegment("client or location", row.client_or_location) },
     { key: "seq", label: "sequence", ...checkSequence(row.sequence) },
   ];
   const ext = row.source_path_ext || "";
   const errors = parts.filter((p) => p.error).map((p) => p.error);
-  const name = errors.length ? "" : parts.filter((p) => p.key !== "industry" || p.value).map((p) => p.filenameValue || p.value).join("_") + ext;
+  const name = errors.length ? "" : parts.filter((p) => !["part", "industry"].includes(p.key) || p.value).map((p) => p.filenameValue || p.value).join("_") + ext;
   return { segments: parts, ext, errors, name };
 }
 

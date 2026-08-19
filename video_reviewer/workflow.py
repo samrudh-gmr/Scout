@@ -141,10 +141,11 @@ def build_prepare_manifest(
 
 def assign_sequences_by_name(rows: list[ManifestRow]) -> None:
     """Number only repeated complete names; a unique name is always ``001``."""
-    seen: dict[tuple[str, str, str, str], int] = {}
+    seen: dict[tuple[str, str, str, str, str], int] = {}
     for row in rows:
         key = (
             row.year_month.strip(),
+            row.part.strip(),
             row.description.strip(),
             row.industry.strip(),
             row.client_or_location.strip(),
