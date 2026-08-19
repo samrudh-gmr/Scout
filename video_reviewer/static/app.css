@@ -1022,9 +1022,25 @@ textarea.guide:focus { border-color: var(--line-str); }
 
 /* ── responsive ──────────────────────────────────────────────────────────── */
 
-@media (max-width: 1180px) {
-  .bay { grid-template-columns: 248px minmax(0, 1fr); grid-template-rows: 1fr auto; }
-  .side { grid-column: 1 / -1; border-left: 0; border-top: 1px solid var(--line); }
+@media (max-width: 1040px) {
+  /* Keep the three-column review desk until it actually runs out of room.
+     On Retina Macs a 2280px window can be only 1140 CSS pixels wide; the old
+     1180px breakpoint therefore moved the entire name panel underneath and
+     collapsed the player row to a thin strip. */
+  .bay {
+    grid-template-columns: 224px minmax(0, 1fr);
+    grid-template-rows: minmax(360px, 1fr) auto;
+    height: auto;
+    min-height: 100%;
+  }
+  .side {
+    grid-column: 1 / -1;
+    grid-template-columns: minmax(0, 1fr) minmax(300px, 0.85fr);
+    grid-template-rows: minmax(0, 1fr);
+    border-left: 0;
+    border-top: 1px solid var(--line);
+  }
+  .chat { border-top: 0; border-left: 1px solid var(--line); }
 }
 
 @media (max-width: 820px) {
@@ -1033,6 +1049,8 @@ textarea.guide:focus { border-color: var(--line-str); }
   .manifest { display: none; }
   .bay { grid-template-columns: 1fr; grid-template-rows: auto auto auto; height: auto; }
   .log { border-right: 0; border-bottom: 1px solid var(--line); max-height: 40vh; }
+  .side { grid-template-columns: 1fr; grid-template-rows: auto minmax(260px, 1fr); }
+  .chat { border-left: 0; border-top: 1px solid var(--line); }
   .sheet { padding: 24px 16px; }
   .dock { flex-wrap: wrap; }
 }
