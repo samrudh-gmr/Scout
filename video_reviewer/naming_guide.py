@@ -135,11 +135,24 @@ Render spaces and `&` as hyphens/`and` in filenames, for example
 """
 
 
+def _is_untouched_legacy_guide(text: str) -> bool:
+    """Recognize only the original shipped guide, not an operator's custom guide."""
+    return all(marker in text for marker in (
+        "`YYYY-MM_Description_ClientOrLocation_SequenceNumber.extension`",
+        "Example: `2022-12_Sanding Ambulance Body_Life Line_001.mov`",
+        "2024-03_Sanding Composite Aircraft Panel_GMR HQ_001.mov",
+    ))
+
+
 def ensure_guide() -> Path:
     """Create the guide on first use. An existing file is never overwritten."""
     if not GUIDE_PATH.exists():
         GUIDE_PATH.parent.mkdir(parents=True, exist_ok=True)
         GUIDE_PATH.write_text(DEFAULT_GUIDE, encoding="utf-8")
+    else:
+        existing = GUIDE_PATH.read_text(encoding="utf-8")
+        if _is_untouched_legacy_guide(existing):
+            GUIDE_PATH.write_text(DEFAULT_GUIDE, encoding="utf-8")
     return GUIDE_PATH
 
 
