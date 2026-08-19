@@ -91,6 +91,7 @@ def review_video(row_index: int) -> list[dict]:
         "capture_time": row.capture_time,
         "current_status": row.review_status,
         "current_description": row.description or None,
+        "current_industry": row.industry or None,
         "current_client_or_location": row.client_or_location or None,
     }
     try:
@@ -128,8 +129,9 @@ def review_video(row_index: int) -> list[dict]:
         "text": (
             "\nPlease analyze these frames and provide:\n"
             "1. **description**: Action + Object phrase (e.g., 'Sanding Automotive Body Panel')\n"
-            "2. **client_or_location**: Client company or site name\n"
-            "3. Whether this is a manual process (human operator visible)\n\n"
+            "2. **industry**: One approved industry category only when a recognizable part is present; otherwise empty\n"
+            "3. **client_or_location**: Client company or site name\n"
+            "4. Whether this is a manual process (human operator visible)\n\n"
             "Then call `approve_video` with your classification."
         ),
     })
@@ -142,6 +144,7 @@ def approve_video(
     description: str,
     client_or_location: str,
     year_month: str = "",
+    industry: str = "",
 ) -> str:
     """Approve a video with the given classification and mark it as approved.
 
@@ -163,6 +166,7 @@ def approve_video(
         source_name = Path(row.source_path).name
 
         row.description = description.strip()
+        row.industry = industry.strip()
         row.client_or_location = client_or_location.strip()
         if year_month:
             row.year_month = year_month.strip()
@@ -179,6 +183,7 @@ def approve_video(
         f"Approved: {source_name}\n"
         f"Proposed name: {row.proposed_name}\n"
         f"Description: {row.description}\n"
+        f"Industry: {row.industry or 'none'}\n"
         f"Client/Location: {row.client_or_location}\n"
         f"Year-Month: {row.year_month}"
     )

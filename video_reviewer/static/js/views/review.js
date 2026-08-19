@@ -3,7 +3,7 @@
 
 import { api } from "../api.js";
 import { el, clear, add, pill, note, busy } from "../dom.js";
-import { state, view as rowView, edit, assemble, loadRows, counts, isEdited, dirty } from "../store.js";
+import { state, view as rowView, edit, assemble, loadRows, counts, isEdited, dirty, INDUSTRIES } from "../store.js";
 import { chatPanel } from "../chat.js";
 
 export async function reviewView({ view, dock }) {
@@ -164,7 +164,7 @@ export async function reviewView({ view, dock }) {
         nameLine.append(
           segment.error
             ? el("span.missing", { "data-seg": segment.key }, `⟨${segment.label}⟩`)
-            : el(`span.s.${segment.key}`, { "data-seg": segment.key }, segment.value),
+            : el(`span.s.${segment.key}`, { "data-seg": segment.key }, segment.filenameValue || segment.value),
         );
       });
       nameLine.append(el("span.s.ext", null, ext));
@@ -173,13 +173,32 @@ export async function reviewView({ view, dock }) {
     const fields = [
       { key: "date", field: "year_month", label: "Year-month", placeholder: "2024-07" },
       { key: "desc", field: "description", label: "Description", placeholder: "Robotic Sanding Composite Panel" },
+      { key: "industry", field: "industry", label: "Industry (only if part is present)", placeholder: "" },
       { key: "client", field: "client_or_location", label: "Client / location", placeholder: "SOLV California" },
       { key: "seq", field: "sequence", label: "Sequence (automatic)", placeholder: "001" },
     ];
 
     const segs = el("div.segs");
     for (const spec of fields) {
-      const input = el("input", {
+      const input = spec.field === "industry"
+        ? el(
+          "select",
+          {
+            id: `seg-${spec.key}`,
+            value: row[spec.field] ?? "",
+            onchange: (event) => {
+              edit(index, { [spec.field]: event.target.value });
+              paintName();
+              renderLog();
+              renderDock();
+            },
+            onfocus: () => nameLine.querySelector(`[data-seg="${spec.key}"]`)?.classList.add("lit"),
+            onblur: () => nameLine.querySelectorAll(".lit").forEach((node) => node.classList.remove("lit")),
+          },
+          el("option", { value: "" }, "No industry / no identifiable part"),
+          INDUSTRIES.map((industry) => el("option", { value: industry }, industry)),
+        )
+        : el("input", {
         type: "text",
         id: `seg-${spec.key}`,
         value: row[spec.field] ?? "",
@@ -195,6 +214,7 @@ export async function reviewView({ view, dock }) {
         onfocus: () => nameLine.querySelector(`[data-seg="${spec.key}"]`)?.classList.add("lit"),
         onblur: () => nameLine.querySelectorAll(".lit").forEach((node) => node.classList.remove("lit")),
       });
+      if (spec.field === "industry") input.value = row[spec.field] ?? "";
       segs.append(
         el(`div.seg.${spec.key}`, null, el("label", { for: `seg-${spec.key}` }, spec.label), input),
       );
@@ -236,6 +256,7 @@ export async function reviewView({ view, dock }) {
           index,
           checked: true,
           description: row.description,
+          industry: row.industry,
           client_or_location: row.client_or_location,
           year_month: row.year_month,
           sequence: row.sequence,

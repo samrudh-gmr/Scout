@@ -462,6 +462,47 @@ def test_build_proposed_name() -> None:
     assert build_proposed_name(row) == "2024-07_Sanding Metal Panel_GMR HQ_001.mov"
 
 
+def test_build_proposed_name_includes_industry_when_part_is_present() -> None:
+    row = ManifestRow(
+        source_path="/tmp/wheel.mov",
+        year_month="2026-08",
+        description="Surface Finishing Aluminum Wheel",
+        industry="Specialty Vehicle",
+        client_or_location="ClientName",
+        sequence="1",
+    )
+    assert build_proposed_name(row) == "2026-08_Surface Finishing Aluminum Wheel_Specialty-Vehicle_ClientName_001.mov"
+
+
+def test_build_proposed_name_omits_empty_industry() -> None:
+    row = ManifestRow(
+        source_path="/tmp/test.mov",
+        year_month="2026-08",
+        description="Surface Finishing Test",
+        industry="",
+        client_or_location="ClientName",
+        sequence="2",
+    )
+    assert build_proposed_name(row) == "2026-08_Surface Finishing Test_ClientName_002.mov"
+
+
+def test_build_proposed_name_rejects_unknown_industry() -> None:
+    row = ManifestRow(
+        source_path="/tmp/part.mov",
+        year_month="2026-08",
+        description="Finishing Bracket",
+        industry="Automotive",
+        client_or_location="ClientName",
+        sequence="1",
+    )
+    try:
+        build_proposed_name(row)
+    except ValueError as exc:
+        assert "industry must be one of" in str(exc)
+    else:
+        raise AssertionError("Expected unknown industry to be rejected")
+
+
 def test_ai_providers_are_registered_and_report_provider_specific_keys(monkeypatch) -> None:
     from video_reviewer.ai_review import available_providers, provider_status
 
@@ -879,6 +920,30 @@ def test_save_derives_sequence_from_repeated_names(tmp_path: Path) -> None:
     row = read_manifest_csv(manifest)[0]
     assert row.review_status == REVIEW_APPROVED
     assert row.proposed_name == "2024-07_Robotic Sanding Composite Panel_SOLV California_001.mov"
+
+
+def test_save_persists_optional_industry_segment(tmp_path: Path) -> None:
+    from fastapi.testclient import TestClient
+    from video_reviewer.gui import create_app
+
+    manifest = tmp_path / "manifest.csv"
+    write_manifest_csv(manifest, [ManifestRow(source_path=str(tmp_path / "wheel.mov"))])
+    client = TestClient(create_app(manifest))
+
+    response = client.post("/api/save", json={"rows": [{
+        "index": 0,
+        "checked": True,
+        "description": "Surface Finishing Aluminum Wheel",
+        "industry": "Specialty Vehicle",
+        "client_or_location": "ClientName",
+        "year_month": "2026-08",
+        "sequence": "1",
+    }]})
+
+    assert response.status_code == 200, response.json()
+    row = read_manifest_csv(manifest)[0]
+    assert row.industry == "Specialty Vehicle"
+    assert row.proposed_name == "2026-08_Surface Finishing Aluminum Wheel_Specialty-Vehicle_ClientName_001.mov"
 
 
 def test_api_key_is_stored_privately_and_never_returned(tmp_path: Path, monkeypatch) -> None:

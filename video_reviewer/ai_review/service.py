@@ -156,6 +156,7 @@ def _review_one_row(manifest_path: Path, index: int, provider, config: ProviderC
         status=row_status,
         proposed_name=getattr(row, "proposed_name", ""),
         description=getattr(row, "description", ""),
+        industry=getattr(row, "industry", ""),
         client_or_location=getattr(row, "client_or_location", ""),
         confidence=float(getattr(row, "ai_confidence", "") or 0.0),
         response=getattr(row, "ai_rationale", ""),
@@ -253,6 +254,7 @@ def _apply_response(row, response: ReviewResponse, policy: ReviewPolicy) -> None
     if response.is_manual and not description.lower().startswith("manual"):
         description = f"Manual {description}"
     row.description = description
+    row.industry = response.industry.strip()
     # A client chosen on Prepare is authoritative batch metadata. The model can
     # still identify the activity, but may not replace an operator override.
     batch_client_override = str(_parse_hints(row.source_hints).get("batch_client_override", "")).strip()

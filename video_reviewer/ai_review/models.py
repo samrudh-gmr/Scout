@@ -95,6 +95,7 @@ class ReviewResponse:
     client_or_location: str
     is_manual: bool
     confidence: float
+    industry: str = ""
     rationale: str = ""
     flags: list[str] = field(default_factory=list)
     raw_text: str = ""
@@ -108,6 +109,7 @@ class RowResult:
     status: str
     proposed_name: str = ""
     description: str = ""
+    industry: str = ""
     client_or_location: str = ""
     confidence: float = 0.0
     response: str = ""

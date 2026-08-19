@@ -59,6 +59,7 @@ def parse_response(data: dict[str, Any]) -> ReviewResponse:
         client_or_location=str(data.get("client_or_location", "")).strip(),
         is_manual=_parse_bool(data.get("is_manual", False)),
         confidence=max(0.0, min(1.0, confidence)),
+        industry=str(data.get("industry", "")).strip(),
         rationale=str(data.get("rationale", "")).strip(),
         flags=[str(flag).strip() for flag in flags if str(flag).strip()],
         raw_text=str(data.get("_raw_text", "")),

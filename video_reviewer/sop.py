@@ -8,6 +8,14 @@ from video_reviewer.manifest import REVIEW_APPLIED, REVIEW_APPROVED, ManifestRow
 
 VIDEO_EXTENSIONS = {".mov", ".mp4", ".m4v", ".avi", ".mkv", ".mts", ".mxf", ".webm"}
 INVALID_FILENAME_CHARS = set('/\\:*?"<>|')
+INDUSTRY_CATEGORIES = (
+    "Specialty Vehicle",
+    "Marine & Boat Building",
+    "General Manufacturing",
+    "Consumer and Recreation",
+    "Architecture",
+    "Aerospace & Defense",
+)
 
 
 def natural_sort_key(value: str) -> list[object]:
@@ -47,13 +55,23 @@ def validate_sequence(value: str) -> str:
     return f"{int(value):03d}"
 
 
+def validate_industry(value: str) -> str:
+    value = clean_field(value)
+    if not value:
+        return ""
+    if value not in INDUSTRY_CATEGORIES:
+        raise ValueError(f"industry must be one of: {', '.join(INDUSTRY_CATEGORIES)}")
+    return value
+
+
 def build_proposed_name(row: ManifestRow) -> str:
     ext = Path(row.source_path).suffix
     return (
         f"{validate_year_month(row.year_month)}_"
         f"{validate_field('description', row.description)}_"
-        f"{validate_field('client_or_location', row.client_or_location)}_"
-        f"{validate_sequence(row.sequence)}{ext}"
+        + (f"{validate_industry(row.industry).replace(' ', '-').replace('&', 'and')}_" if row.industry else "")
+        + f"{validate_field('client_or_location', row.client_or_location)}_"
+        + f"{validate_sequence(row.sequence)}{ext}"
     )
 
 

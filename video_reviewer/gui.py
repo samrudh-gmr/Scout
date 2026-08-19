@@ -104,6 +104,7 @@ def create_app(manifest_path: Path | None = None) -> FastAPI:
                 "source_name": Path(row.source_path).name,
                 "year_month": row.year_month,
                 "description": row.description,
+                "industry": row.industry,
                 "client_or_location": row.client_or_location,
                 "sequence": row.sequence,
                 "proposed_name": row.proposed_name,
@@ -214,10 +215,12 @@ def create_app(manifest_path: Path | None = None) -> FastAPI:
                 if not edit or not edit.get("checked"):
                     continue
                 new_desc = edit.get("description", row.description)
+                new_industry = edit.get("industry", row.industry)
                 new_client = edit.get("client_or_location", row.client_or_location)
-                if row.description and (new_desc != row.description or new_client != row.client_or_location):
+                if row.description and (new_desc != row.description or new_industry != row.industry or new_client != row.client_or_location):
                     corrections.append((Path(row.source_path).name, row.description, row.client_or_location, new_desc, new_client))
                 row.description = new_desc
+                row.industry = new_industry
                 row.client_or_location = new_client
                 row.year_month = edit.get("year_month", row.year_month)
                 row.review_status = REVIEW_APPROVED

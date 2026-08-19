@@ -21,9 +21,11 @@ concrete — rules and vocabulary, not prose.
 
 ## Schema
 
-`YYYY-MM_Description_ClientOrLocation_SequenceNumber.extension`
+`YYYY-MM_Description_IndustryIfPartPresent_ClientOrLocation_SequenceNumber.extension`
 
-Example: `2022-12_Sanding Ambulance Body_Life Line_001.mov`
+Examples:
+- `2026-08_Surface Finishing Aluminum Wheel_Specialty-Vehicle_ClientName_001.mov`
+- `2026-08_Surface Finishing Test_ClientName_002.mov`
 
 - Underscores separate fields and appear nowhere else.
 - Spaces are allowed inside Description and Client/Location.
@@ -44,6 +46,22 @@ Write **Action + Object** in Title Case. Be specific — these names are searche
 Good: `Sanding Ambulance Body` · `Grinding Metal Panel` · `Buff and Polish Boat
 Hull` · `Paint Spray Automobile Part` · `Inspection Composite Panel` ·
 `Scanning Weld Seam` · `Assembly Metal Frame`
+
+## Industry
+
+Only include an industry when a recognizable part is visible. Use exactly one
+of these categories, stored with spaces and rendered with hyphens in filenames:
+
+- Specialty Vehicle → `Specialty-Vehicle`
+- Marine & Boat Building → `Marine-and-Boat-Building`
+- General Manufacturing → `General-Manufacturing`
+- Consumer and Recreation → `Consumer-and-Recreation`
+- Architecture → `Architecture`
+- Aerospace & Defense → `Aerospace-and-Defense`
+
+If there is no identifiable part, leave Industry empty and omit that filename
+segment. Do not use generic terms such as `Part`, `Component`, or `Metal Piece`
+when the part can be identified with reasonable confidence.
 
 ### Manual work
 
@@ -91,13 +109,29 @@ and the filename genuinely give you nothing.
 ## Reference filenames
 
 ```
-2024-03_Sanding Composite Aircraft Panel_GMR HQ_001.mov
-2024-04_Grinding Steel Column_FABTECH Event_001.mov
-2024-06_Buff and Polish Bicycle Frame_GMR HQ_001.mov
-2023-09_Grinding Welded Metal Frame_Performance Composites_001.mov
-2024-07_Sanding Fiberglass Boat Hull_GMR HQ_001.mov
-2022-12_Sanding Ambulance Body_Life Line_001.mov
+2024-03_Sanding Composite Aircraft Panel_Aerospace-and-Defense_GMR HQ_001.mov
+2024-04_Grinding Steel Column_Architecture_FABTECH Event_001.mov
+2024-06_Buff and Polish Bicycle Frame_Consumer-and-Recreation_GMR HQ_001.mov
+2023-09_Grinding Welded Metal Frame_General-Manufacturing_Performance Composites_001.mov
+2024-07_Buff and Polish Fiberglass Boat Hull_Marine-and-Boat-Building_GMR HQ_001.mov
+2022-12_Sanding Ambulance Body_Specialty-Vehicle_Life Line_001.mov
 ```
+"""
+
+
+CURRENT_CONVENTION_OVERLAY = """## Current filename convention — Scout
+
+The current convention supersedes any older schema above:
+
+`YYYY-MM_Description_IndustryIfPartPresent_ClientOrLocation_SequenceNumber.extension`
+
+If a recognizable industrial part is visible, include its specific name in
+Description and choose exactly one approved Industry category. If no
+recognizable part is present, leave Industry empty and omit that segment.
+Industry categories: Specialty Vehicle; Marine & Boat Building; General
+Manufacturing; Consumer and Recreation; Architecture; Aerospace & Defense.
+Render spaces and `&` as hyphens/`and` in filenames, for example
+`Specialty-Vehicle` and `Aerospace-and-Defense`.
 """
 
 
@@ -112,7 +146,10 @@ def ensure_guide() -> Path:
 def load_guide() -> str:
     """The operator's guide text, or the shipped default if it cannot be read."""
     try:
-        return ensure_guide().read_text(encoding="utf-8").strip()
+        text = ensure_guide().read_text(encoding="utf-8").strip()
+        if "IndustryIfPartPresent" not in text:
+            text = f"{text}\n\n{CURRENT_CONVENTION_OVERLAY}"
+        return text
     except OSError:
         return DEFAULT_GUIDE.strip()
 

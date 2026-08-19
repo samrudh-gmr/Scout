@@ -83,6 +83,22 @@ export function checkSequence(value) {
   return { value: String(Number(clean)).padStart(3, "0"), error: "" };
 }
 
+export const INDUSTRIES = [
+  "Specialty Vehicle",
+  "Marine & Boat Building",
+  "General Manufacturing",
+  "Consumer and Recreation",
+  "Architecture",
+  "Aerospace & Defense",
+];
+
+export function checkIndustry(value) {
+  const clean = String(value || "").trim();
+  if (!clean) return { value: "", filenameValue: "", error: "" };
+  if (!INDUSTRIES.includes(clean)) return { value: clean, filenameValue: clean, error: "industry must use an approved category" };
+  return { value: clean, filenameValue: clean.replaceAll(" ", "-").replace("&", "and"), error: "" };
+}
+
 /**
  * Break a row into the four SOP segments plus its extension, each carrying its
  * own error. Views render this directly — that is the name builder.
@@ -92,12 +108,13 @@ export function assemble(row) {
   const parts = [
     { key: "date", label: "year-month", ...checkYearMonth(row.year_month) },
     { key: "desc", label: "description", ...checkSegment("description", row.description) },
+    { key: "industry", label: "industry", ...checkIndustry(row.industry) },
     { key: "client", label: "client / location", ...checkSegment("client or location", row.client_or_location) },
     { key: "seq", label: "sequence", ...checkSequence(row.sequence) },
   ];
   const ext = row.source_path_ext || "";
   const errors = parts.filter((p) => p.error).map((p) => p.error);
-  const name = errors.length ? "" : parts.map((p) => p.value).join("_") + ext;
+  const name = errors.length ? "" : parts.filter((p) => p.key !== "industry" || p.value).map((p) => p.filenameValue || p.value).join("_") + ext;
   return { segments: parts, ext, errors, name };
 }
 

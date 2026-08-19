@@ -41,8 +41,8 @@ from video_reviewer.naming_guide import GUIDE_PATH, load_guide
 # deliberately smaller than the review preset's.
 CHAT_FRAMES = 5
 MAX_HISTORY = 12
-EDITABLE_FIELDS = ("description", "client_or_location", "year_month", "sequence")
-GLOBAL_EDITABLE_FIELDS = ("description", "client_or_location", "year_month")
+EDITABLE_FIELDS = ("description", "industry", "client_or_location", "year_month", "sequence")
+GLOBAL_EDITABLE_FIELDS = ("description", "industry", "client_or_location", "year_month")
 MAX_BATCH_CONTEXT = 200
 
 # Asked for on the turn that carries the images; replayed as text on every turn
@@ -119,6 +119,7 @@ def _batch_context(rows) -> str:
             "source_filename": Path(row.source_path).name,
             "year_month": row.year_month,
             "description": row.description,
+            "industry": row.industry,
             "client_or_location": row.client_or_location,
             "sequence": row.sequence,
             "review_status": row.review_status,

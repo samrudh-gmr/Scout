@@ -21,16 +21,17 @@ Metadata / source hints:
 {context}
 
 Determine, from the frames and hints:
-- description: an "Action + Object" phrase for the process shown, in Title Case, e.g. "Sanding Automotive Body Panel".
+- description: an "Action + Object" phrase for the process shown, in Title Case. If a recognizable part is visible, include its specific name, e.g. "Surface Finishing Aluminum Wheel" or "Drilling Aircraft Bracket". Do not use generic terms like part or component when a specific identification is reasonably confident.
+- industry: if and only if a recognizable part is present, choose exactly one of: "Specialty Vehicle", "Marine & Boat Building", "General Manufacturing", "Consumer and Recreation", "Architecture", "Aerospace & Defense". If no identifiable part is present, use an empty string.
 - client_or_location: the client company or site name. Prefer filename/location hints. Use "Unknown" only if genuinely impossible.
 - is_manual: true if a human operator performing the process is visible.
 - confidence: confidence from 0.0 to 1.0 in description + client/location.
 - rationale: one short sentence explaining the classification.
 - flags: short uncertainty flags, e.g. ["client_unknown", "blurry_frames"].
 
-Hard constraints: description and client_or_location MUST NOT contain underscores or any of these characters: / \\ : * ? " < > | and neither may be empty.
+Hard constraints: description, industry (when non-empty), and client_or_location MUST NOT contain underscores or any of these characters: / \\ : * ? " < > |. Description and client_or_location may not be empty. Industry must be empty or one of the six exact categories above.
 
-Respond with ONLY a JSON object with exactly these keys: description, client_or_location, is_manual, confidence, rationale, flags."""
+Respond with ONLY a JSON object with exactly these keys: description, industry, client_or_location, is_manual, confidence, rationale, flags."""
 
 
 class GeminiProvider:
@@ -174,6 +175,7 @@ class GeminiProvider:
             client_or_location=str(data.get("client_or_location", "")).strip(),
             is_manual=(data.get("is_manual") is True or str(data.get("is_manual", "")).strip().lower() in {"true", "1", "yes"}),
             confidence=max(0.0, min(1.0, confidence)),
+            industry=str(data.get("industry", "")).strip(),
             rationale=str(data.get("rationale", "")).strip(),
             flags=[str(flag).strip() for flag in flags if str(flag).strip()],
             raw_text=str(data.get("_raw_text", "")),

@@ -28,6 +28,7 @@ MANIFEST_COLUMNS = [
     "sample_frames",
     "year_month",
     "description",
+    "industry",
     "client_or_location",
     "sequence",
     "proposed_name",
@@ -54,6 +55,7 @@ class ManifestRow:
     sample_frames: str = ""
     year_month: str = ""
     description: str = ""
+    industry: str = ""
     client_or_location: str = ""
     sequence: str = ""
     proposed_name: str = ""
