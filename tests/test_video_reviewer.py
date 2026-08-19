@@ -337,6 +337,31 @@ def test_review_rows_approves_high_confidence(monkeypatch, tmp_path: Path) -> No
     assert saved[0].ai_rationale == "Operator sanding a panel."
 
 
+def test_ai_review_preserves_prepare_client_override(tmp_path: Path) -> None:
+    from video_reviewer.ai_review.models import ReviewPolicy, ReviewResponse
+    from video_reviewer.ai_review.service import _apply_response
+
+    row = ManifestRow(
+        source_path=str(tmp_path / "clip.mov"),
+        year_month="2024-07",
+        client_or_location="SOLV California",
+        sequence="001",
+        source_hints='{"batch_client_override": "SOLV California"}',
+    )
+    _apply_response(
+        row,
+        ReviewResponse(
+            description="Sanding Metal Panel",
+            client_or_location="Wrong AI Guess",
+            is_manual=False,
+            confidence=0.95,
+        ),
+        ReviewPolicy(),
+    )
+
+    assert row.client_or_location == "SOLV California"
+
+
 def test_review_rows_flags_low_confidence_for_review(monkeypatch, tmp_path: Path) -> None:
     from video_reviewer import gemini_review
 

@@ -253,7 +253,10 @@ def _apply_response(row, response: ReviewResponse, policy: ReviewPolicy) -> None
     if response.is_manual and not description.lower().startswith("manual"):
         description = f"Manual {description}"
     row.description = description
-    row.client_or_location = response.client_or_location.strip()
+    # A client chosen on Prepare is authoritative batch metadata. The model can
+    # still identify the activity, but may not replace an operator override.
+    batch_client_override = str(_parse_hints(row.source_hints).get("batch_client_override", "")).strip()
+    row.client_or_location = batch_client_override or response.client_or_location.strip()
     confidence = max(0.0, min(1.0, float(response.confidence)))
     row.ai_confidence = f"{confidence:.2f}"
     row.ai_rationale = response.rationale.strip()

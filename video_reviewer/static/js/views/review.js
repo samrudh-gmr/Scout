@@ -3,7 +3,7 @@
 
 import { api } from "../api.js";
 import { el, clear, add, pill, note, busy } from "../dom.js";
-import { state, view as rowView, edit, assemble, loadRows, counts, isEdited } from "../store.js";
+import { state, view as rowView, edit, assemble, loadRows, counts, isEdited, dirty } from "../store.js";
 import { chatPanel } from "../chat.js";
 
 export async function reviewView({ view, dock }) {
@@ -337,13 +337,30 @@ export async function reviewView({ view, dock }) {
           : "All clips approved",
     );
 
+    const applyLink = el(
+      "button.btn.primary",
+      {
+        onclick: async () => {
+          const edited = Object.keys(state.edits).map(Number);
+          const incomplete = edited.filter((index) => assemble(rowView(index)).errors.length);
+          if (incomplete.length) {
+            flash(note("err", "Finish every edited name before opening Apply."));
+            return;
+          }
+          if (edited.length && !(await approve(edited, applyLink))) return;
+          window.location.hash = "#/apply";
+        },
+      },
+      dirty() ? "Save edits & Apply →" : "Apply →",
+    );
+
     clear(dock).append(
       el("a.btn.ghost", { href: "#/name" }, "← Name"),
       el("span.tally", null, `${c.approved + c.applied} of ${c.total} approved`),
       el("span.spacer"),
       approveAllButton,
       approveButton,
-      el("a.btn.primary", { href: "#/apply" }, "Apply →"),
+      applyLink,
     );
   }
 

@@ -64,6 +64,7 @@ def build_prepare_manifest(
     ai_frame_quality: int = 2,
 ) -> list[ManifestRow]:
     require_fftools()
+    batch_client_override = client_or_location.strip()
     candidates = sorted(
         [path for path in input_dir.iterdir() if path.is_file() and path.suffix.lower() in VIDEO_EXTENSIONS],
         key=lambda item: natural_sort_key(item.name),
@@ -109,7 +110,7 @@ def build_prepare_manifest(
                 proxy_path=str(proxy_path.resolve()),
                 sample_frames="|".join(str(frame.resolve()) for frame in frame_paths),
                 year_month=resolved_year_month,
-                client_or_location=client_or_location.strip(),
+                client_or_location=batch_client_override,
                 sequence="",
                 review_status=REVIEW_PENDING,
                 capture_time=metadata.get("capture_time", ""),
@@ -118,6 +119,10 @@ def build_prepare_manifest(
                         "filename_inferred_year_month": inferred_year_month,
                         "warnings": hint_flags,
                         "filename_hints": infer_source_hints(path.name),
+                        # A client chosen for the whole batch is operator input,
+                        # not a model suggestion. Keep this provenance so AI
+                        # review cannot replace it with a visual guess later.
+                        "batch_client_override": batch_client_override,
                         "duration": metadata.get("duration", ""),
                         "size": metadata.get("size", ""),
                         "width": metadata.get("width", ""),

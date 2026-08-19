@@ -111,13 +111,13 @@ export async function prepareView({ view, dock, go }) {
         el(
           "div.field",
           { style: { marginTop: "14px", maxWidth: "420px" } },
-          el("label", { for: "batchClient" }, "Client / location (optional)"),
+          el("label", { for: "batchClient" }, "Client / location override (optional)"),
           client,
         ),
         el(
           "p.hint",
           null,
-          "Leave the date blank to read it from each filename. Set a date or client here when it applies to every video in this folder.",
+          "Leave the date blank to read it from each filename. A client set here applies to every video in this folder and stays authoritative during AI naming.",
         ),
       ),
 
