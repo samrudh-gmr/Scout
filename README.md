@@ -27,7 +27,7 @@ video-renamer gui
 
 Then open the local app and use the guided flow:
 
-1. Click **Choose folder** and select the video folder.
+1. Click **Choose folder** and select the video folder; optionally set the date and client shared by that folder.
 2. Click **Prepare videos** to create the manifest and sample frames.
 3. Paste a provider API key or set the provider env var.
 4. Pick a cost/accuracy preset.
@@ -43,13 +43,14 @@ Folder selection is cross-platform. **Choose folder** uses the native desktop di
 Create proxies for local playback, extract source-quality representative frames for AI/manual review, and generate the initial manifest CSV:
 
 ```bash
-video-renamer prepare --input /path/to/videos --manifest manifest.csv
+video-renamer prepare --input /path/to/videos --manifest manifest.csv --client "SOLV California"
 ```
 
 Options:
 
 - `--year-month YYYY-MM` — batch override for the year-month field.
-- `--start-seq N` — starting sequence number (default: `1`).
+- `--client TEXT` — optional client/location applied to every video in the input folder.
+- `--start-seq N` — retained for CLI compatibility; sequences are now derived from repeated final names.
 - `--tmp-dir DIR` — directory for proxies and frames (default: `tmp`).
 - `--proxy-scale N` — max proxy width in pixels for local playback (default: `1280`).
 - `--sample-count N` — frames to extract per video. Default `0` auto-scales by duration: about one frame per 30 seconds, minimum 4, maximum 20.
@@ -57,6 +58,8 @@ Options:
 - `--ai-frame-quality N` — JPEG quality for AI frames, `2` high quality through `31` low quality (default: `2`).
 
 Frame sampling is deterministic: frames are taken at midpoint timestamps across the video rather than from a low-res proxy or approximate FPS filter.
+
+The sequence is automatic: a unique final name is always `001`; only otherwise-identical names increment (`001`, `002`, ...).
 
 ## API-key AI review
 
@@ -163,6 +166,8 @@ Example:
 ```text
 2024-07_Sanding Automotive Body Panel_SOLV California_002.mov
 ```
+
+The review chat can discuss the open batch as well as the clip on screen. An explicit request such as “change the customer name in all videos to Acme” produces a visible all-clips proposal; it still must be reviewed and approved before the manifest changes.
 
 ## Development
 

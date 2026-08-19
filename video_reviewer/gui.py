@@ -23,6 +23,7 @@ from video_reviewer.manifest import (
     write_manifest_csv,
 )
 from video_reviewer.sop import build_proposed_name
+from video_reviewer.workflow import assign_sequences_by_name
 
 logger = logging.getLogger("video_renamer")
 
@@ -212,9 +213,14 @@ def create_app(manifest_path: Path) -> FastAPI:
                 row.description = new_desc
                 row.client_or_location = new_client
                 row.year_month = edit.get("year_month", row.year_month)
-                # The sequence is part of the SOP name, so the editor owns it too.
-                row.sequence = str(edit.get("sequence", row.sequence))
                 row.review_status = REVIEW_APPROVED
+
+            # The suffix distinguishes otherwise-identical names; it must not
+            # reflect a clip's position in the imported folder.
+            assign_sequences_by_name(rows)
+            for i, row in enumerate(rows):
+                if i not in edited or not edited[i].get("checked"):
+                    continue
                 try:
                     row.proposed_name = build_proposed_name(row)
                 except ValueError as exc:
@@ -241,6 +247,7 @@ def create_app(manifest_path: Path) -> FastAPI:
                 lambda: build_prepare_manifest(
                     input_dir=input_dir,
                     year_month=body.get("year_month", ""),
+                    client_or_location=body.get("client_or_location", ""),
                     start_seq=int(body.get("start_seq", 1)),
                     tmp_dir=Path(body.get("tmp_dir", "tmp")).expanduser().resolve(),
                     proxy_scale=int(body.get("proxy_scale", 1280)),
@@ -461,6 +468,7 @@ def create_app(manifest_path: Path) -> FastAPI:
         return JSONResponse({
             "message": reply.message,
             "set_fields": reply.set_fields,
+            "set_batch_fields": reply.set_batch_fields,
             "remembered": reply.remembered,
             "frame_notes": reply.frame_notes,
             "need_frames": reply.need_frames,
@@ -498,8 +506,28 @@ def launch_gui(manifest_path: Path, host: str, port: int) -> None:
         print(f"Port {port} is already in use; starting Video Renamer on port {selected_port} instead.")
     url = f"http://{host}:{selected_port}/ai-review"
     print(f"Opening Video Renamer: {url}")
+    # Safari is notably unforgiving when asked to open a localhost address
+    # before the listener exists: the first interaction can land on its error
+    # page instead of the app. Start Uvicorn first, wait for the socket, then
+    # hand the address to the system browser.
+    config = uvicorn.Config(create_app(manifest_path), host=host, port=selected_port)
+    server = uvicorn.Server(config)
+    thread = threading.Thread(target=server.run, name="video-renamer-server", daemon=True)
+    thread.start()
+    for _ in range(50):
+        try:
+            with socket.create_connection((host, selected_port), timeout=0.1):
+                break
+        except OSError:
+            thread.join(0.1)
+            if not thread.is_alive():
+                raise RuntimeError("Video Renamer server stopped before the browser could open.")
+    else:
+        server.should_exit = True
+        thread.join(1)
+        raise RuntimeError("Video Renamer server did not start within 5 seconds.")
     webbrowser.open(url)
-    uvicorn.run(create_app(manifest_path), host=host, port=selected_port)
+    thread.join()
 
 
 def _choose_port(host: str, preferred_port: int, attempts: int = 20) -> int:

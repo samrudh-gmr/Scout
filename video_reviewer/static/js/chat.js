@@ -17,8 +17,9 @@ const OPENERS = [
 /**
  * @param {(patch: object) => void} onFields  applies proposed fields to the form
  * @param {(text: string) => void} onRemembered  reports a rule added to the guide
+ * @param {(patch: object) => void} onBatchFields proposes an all-clips update
  */
-export function chatPanel({ onFields, onRemembered }) {
+export function chatPanel({ onFields, onRemembered, onBatchFields }) {
   const log = el("div.chat-log");
   const input = el("input", {
     type: "text",
@@ -106,6 +107,13 @@ export function chatPanel({ onFields, onRemembered }) {
           el("div.applied", null, `Filled in ${Object.keys(fields).map(label).join(", ")} above.`),
         );
       }
+      const batchFields = reply.set_batch_fields || {};
+      if (Object.keys(batchFields).length) {
+        onBatchFields(batchFields);
+        extras.push(
+          el("div.applied", null, `Proposed for every clip: ${Object.keys(batchFields).map(label).join(", ")}. Review and approve to save.`),
+        );
+      }
       if (reply.remembered) {
         onRemembered(reply.remembered);
         extras.push(el("div.applied.rule", null, `Added to the naming guide: ${reply.remembered}`));
@@ -133,7 +141,7 @@ export function chatPanel({ onFields, onRemembered }) {
   const panel = el(
     "section.chat",
     null,
-    el("h2", null, "Ask about this clip"),
+    el("h2", null, "Ask about this clip or batch"),
     log,
     el("div.chat-bar", null, input, sendButton),
   );

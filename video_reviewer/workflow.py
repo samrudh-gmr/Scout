@@ -55,6 +55,7 @@ def build_prepare_manifest(
     *,
     input_dir: Path,
     year_month: str,
+    client_or_location: str = "",
     start_seq: int,
     tmp_dir: Path,
     proxy_scale: int,
@@ -108,6 +109,7 @@ def build_prepare_manifest(
                 proxy_path=str(proxy_path.resolve()),
                 sample_frames="|".join(str(frame.resolve()) for frame in frame_paths),
                 year_month=resolved_year_month,
+                client_or_location=client_or_location.strip(),
                 sequence="",
                 review_status=REVIEW_PENDING,
                 capture_time=metadata.get("capture_time", ""),
@@ -128,9 +130,24 @@ def build_prepare_manifest(
             )
         )
     rows.sort(key=lambda row: (row.capture_time == "", row.capture_time or "", natural_sort_key(Path(row.source_path).name)))
-    for index, row in enumerate(rows, start=start_seq):
-        row.sequence = f"{index:03d}"
+    assign_sequences_by_name(rows)
     return rows
+
+
+def assign_sequences_by_name(rows: list[ManifestRow]) -> None:
+    """Number only repeated complete names; a unique name is always ``001``."""
+    seen: dict[tuple[str, str, str], int] = {}
+    for row in rows:
+        key = (
+            row.year_month.strip(),
+            row.description.strip(),
+            row.client_or_location.strip(),
+        )
+        if not all(key):
+            row.sequence = "001"
+            continue
+        seen[key] = seen.get(key, 0) + 1
+        row.sequence = f"{seen[key]:03d}"
 
 
 @dataclass

@@ -73,6 +73,37 @@ def test_prepare_creates_manifest_rows(monkeypatch, tmp_path: Path) -> None:
     assert rows[0].sample_frames.count("|") == 2
 
 
+def test_prepare_applies_optional_folder_client(monkeypatch, tmp_path: Path) -> None:
+    source_dir = tmp_path / "videos"
+    source_dir.mkdir()
+    write_fake_video(source_dir / "one.mov")
+    write_fake_video(source_dir / "two.mov")
+    monkeypatch.setattr("video_reviewer.workflow.require_fftools", lambda: None)
+    monkeypatch.setattr("video_reviewer.workflow.probe_media", lambda path: {"capture_time": "", "duration": "1"})
+    monkeypatch.setattr("video_reviewer.workflow.run_ffmpeg_proxy", lambda source, proxy, scale: proxy.write_bytes(b"proxy"))
+    monkeypatch.setattr("video_reviewer.workflow.extract_sample_frames", lambda *args, **kwargs: [])
+
+    rows = build_prepare_manifest(
+        input_dir=source_dir, year_month="2024-07", client_or_location="SOLV California",
+        start_seq=1, tmp_dir=tmp_path / "tmp", proxy_scale=1280, sample_count=1,
+    )
+
+    assert [row.client_or_location for row in rows] == ["SOLV California", "SOLV California"]
+
+
+def test_sequences_only_increment_for_repeated_complete_names() -> None:
+    from video_reviewer.workflow import assign_sequences_by_name
+
+    rows = [
+        ManifestRow(source_path="one.mov", year_month="2024-07", description="Sanding Panel", client_or_location="Acme"),
+        ManifestRow(source_path="two.mov", year_month="2024-07", description="Cleaning Panel", client_or_location="Acme"),
+        ManifestRow(source_path="three.mov", year_month="2024-07", description="Sanding Panel", client_or_location="Acme"),
+    ]
+    assign_sequences_by_name(rows)
+
+    assert [row.sequence for row in rows] == ["001", "001", "002"]
+
+
 def test_prepare_without_batch_year_month_uses_filename_inference(monkeypatch, tmp_path: Path) -> None:
     source_dir = tmp_path / "videos"
     source_dir.mkdir()
@@ -745,8 +776,8 @@ def test_native_picker_uses_platform_commands(monkeypatch) -> None:
     assert commands[-1][:3] == ["powershell", "-NoProfile", "-Command"]
 
 
-def test_save_accepts_edited_sequence(tmp_path: Path) -> None:
-    """The review editor owns all four SOP fields, sequence included."""
+def test_save_derives_sequence_from_repeated_names(tmp_path: Path) -> None:
+    """A unique name is 001 regardless of its position in the import batch."""
     from fastapi.testclient import TestClient
     from video_reviewer.gui import create_app
 
@@ -766,7 +797,7 @@ def test_save_accepts_edited_sequence(tmp_path: Path) -> None:
     assert response.status_code == 200, response.json()
     row = read_manifest_csv(manifest)[0]
     assert row.review_status == REVIEW_APPROVED
-    assert row.proposed_name == "2024-07_Robotic Sanding Composite Panel_SOLV California_003.mov"
+    assert row.proposed_name == "2024-07_Robotic Sanding Composite Panel_SOLV California_001.mov"
 
 
 def test_api_key_is_stored_privately_and_never_returned(tmp_path: Path, monkeypatch) -> None:
@@ -928,6 +959,39 @@ def test_chat_sees_the_clip_and_the_guide(tmp_path: Path, monkeypatch) -> None:
     assert "Sanding Metal Panel" in captured["prompt"]      # the clip's current fields
     assert "Operator: which term?" in captured["prompt"]     # the conversation
     assert captured["frames"] == 1
+
+
+def test_chat_can_propose_an_explicit_all_clips_client_change(tmp_path: Path, monkeypatch) -> None:
+    from video_reviewer.ai_review.chat import chat_about_row
+
+    manifest = _chat_manifest(tmp_path)
+    rows = read_manifest_csv(manifest)
+    rows.append(ManifestRow(
+        source_path=str(tmp_path / "clip-two.mov"), year_month="2024-07",
+        description="Cleaning Metal Panel", client_or_location="Old Client", sequence="001",
+    ))
+    write_manifest_csv(manifest, rows)
+    captured = {}
+    monkeypatch.setattr("video_reviewer.ai_review.providers.gemini.GeminiProvider._sdk_installed", lambda self: True)
+    monkeypatch.setattr(
+        "video_reviewer.ai_review.providers.gemini.GeminiProvider._generate",
+        lambda self, key, model, prompt, frames: captured.update(prompt=prompt) or {
+            "message": "I will propose that update for the whole batch.",
+            "set_fields": None,
+            "set_batch_fields": {"client_or_location": "Acme Robotics"},
+            "remember": None,
+        },
+    )
+
+    reply = chat_about_row(
+        manifest, 0, [{"role": "user", "content": "Change the customer name in all videos to Acme Robotics."}], api_key="k",
+    )
+
+    assert reply.set_batch_fields == {"client_or_location": "Acme Robotics"}
+    assert "clip-two.mov" in captured["prompt"]
+    assert "Change the customer name in all videos" in captured["prompt"]
+    # As with a per-clip proposal, browser review/approval still owns persistence.
+    assert read_manifest_csv(manifest)[1].client_or_location == "Old Client"
 
 
 def test_chat_rejects_an_empty_question(tmp_path: Path) -> None:

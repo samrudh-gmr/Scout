@@ -15,6 +15,7 @@ def command_prepare(args: argparse.Namespace) -> int:
     rows = build_prepare_manifest(
         input_dir=Path(args.input).resolve(),
         year_month=args.year_month,
+        client_or_location=args.client,
         start_seq=args.start_seq,
         tmp_dir=Path(args.tmp_dir).resolve(),
         proxy_scale=args.proxy_scale,
@@ -128,6 +129,7 @@ def build_parser() -> argparse.ArgumentParser:
         default="",
         help="Optional batch YYYY-MM value. If omitted, prepare falls back to filename patterns then embedded creation time.",
     )
+    prepare_parser.add_argument("--client", default="", help="Optional client/location applied to every video in the folder")
     prepare_parser.add_argument("--start-seq", type=int, default=1, help="Starting sequence number")
     prepare_parser.add_argument("--tmp-dir", default="tmp", help="Directory for proxy and frame outputs")
     prepare_parser.add_argument("--proxy-scale", type=int, default=1280, help="Maximum proxy width")

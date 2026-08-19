@@ -42,6 +42,8 @@ from video_reviewer.naming_guide import GUIDE_PATH, load_guide
 CHAT_FRAMES = 5
 MAX_HISTORY = 12
 EDITABLE_FIELDS = ("description", "client_or_location", "year_month", "sequence")
+GLOBAL_EDITABLE_FIELDS = ("description", "client_or_location", "year_month")
+MAX_BATCH_CONTEXT = 200
 
 # Asked for on the turn that carries the images; replayed as text on every turn
 # after, so the frames only ever cross the wire once.
@@ -72,6 +74,10 @@ Reply with ONLY a JSON object with these keys:
                Use it only when the operator tells you something that should hold for
                FUTURE clips too — a client's correct spelling, a term to prefer or avoid.
                Do not use it for a fact about this one clip.
+  "set_batch_fields" an object with any of {global_fields}, or null.
+               Use it only when the operator explicitly asks for one field to change on EVERY
+               clip in this open batch. It is a proposal only: the browser shows the change and
+               the operator still approves each resulting filename. Never use it for a subset.
 {frames_clause}
 Never claim you have renamed a file or saved the manifest — you cannot. You propose the
 name and the operator approves it. (A "remember" rule is genuinely written to the guide,
@@ -85,6 +91,7 @@ class ChatReply:
     remembered: str = ""
     frame_notes: str = ""
     need_frames: bool = False
+    set_batch_fields: dict[str, str] = field(default_factory=dict)
 
 
 def _clip_context(row, index: int) -> str:
@@ -104,6 +111,24 @@ def _clip_context(row, index: int) -> str:
     )
 
 
+def _batch_context(rows) -> str:
+    """Compact full-batch inventory for explicit all-clips requests."""
+    inventory = [
+        {
+            "clip_number": index + 1,
+            "source_filename": Path(row.source_path).name,
+            "year_month": row.year_month,
+            "description": row.description,
+            "client_or_location": row.client_or_location,
+            "sequence": row.sequence,
+            "review_status": row.review_status,
+        }
+        for index, row in enumerate(rows[:MAX_BATCH_CONTEXT])
+    ]
+    suffix = "" if len(rows) <= MAX_BATCH_CONTEXT else f"\nOnly the first {MAX_BATCH_CONTEXT} of {len(rows)} clips are listed."
+    return json.dumps({"batch_size": len(rows), "clips": inventory}, indent=2, sort_keys=True) + suffix
+
+
 def _transcript(messages: list[dict]) -> str:
     lines = []
     for message in messages[-MAX_HISTORY:]:
@@ -114,13 +139,14 @@ def _transcript(messages: list[dict]) -> str:
     return "\n".join(lines)
 
 
-def _build_prompt(row, index: int, messages: list[dict], frame_notes: str) -> str:
+def _build_prompt(row, index: int, rows, messages: list[dict], frame_notes: str) -> str:
     from video_reviewer.config import build_corrections_context
 
     has_frames = not frame_notes
     sections = [
         SYSTEM_PROMPT.format(
             fields=", ".join(EDITABLE_FIELDS),
+            global_fields=", ".join(GLOBAL_EDITABLE_FIELDS),
             vision=(
                 "You can see sample frames from the clip."
                 if has_frames
@@ -130,6 +156,7 @@ def _build_prompt(row, index: int, messages: list[dict], frame_notes: str) -> st
             frames_clause=NOTES_CLAUSE if has_frames else NO_FRAMES_CLAUSE,
         ),
         "# This clip\n" + _clip_context(row, index),
+        "# Open batch\n" + _batch_context(rows),
     ]
     if frame_notes:
         sections.append("# What you saw in the frames\n" + frame_notes)
@@ -157,6 +184,16 @@ def _clean_fields(raw) -> dict[str, str]:
         if text or name in raw:
             fields[name] = text
     return fields
+
+
+def _clean_batch_fields(raw) -> dict[str, str]:
+    if not isinstance(raw, dict):
+        return {}
+    return {
+        name: str(raw[name]).strip()
+        for name in GLOBAL_EDITABLE_FIELDS
+        if raw.get(name) is not None and str(raw[name]).strip()
+    }
 
 
 def append_rule(rule: str) -> str:
@@ -206,7 +243,7 @@ def chat_about_row(
     frames = [] if frame_notes else _load_frames(row, ReviewPolicy(max_frames=max_frames))[:max_frames]
 
     data = provider.generate_json(
-        _build_prompt(row, index, messages, frame_notes), frames, config, max_retries=1,
+        _build_prompt(row, index, rows, messages, frame_notes), frames, config, max_retries=1,
     )
 
     message = str(data.get("message", "")).strip()
@@ -225,4 +262,5 @@ def chat_about_row(
         remembered=remembered,
         frame_notes=str(notes).strip() if isinstance(notes, str) else frame_notes,
         need_frames=bool(data.get("need_frames")) and bool(frame_notes),
+        set_batch_fields=_clean_batch_fields(data.get("set_batch_fields")),
     )

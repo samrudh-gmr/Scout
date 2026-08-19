@@ -18,6 +18,14 @@ export async function reviewView({ view, dock }) {
       renderDock();
     },
     onRemembered: (rule) => flash(note("ok", `Naming guide updated: ${rule}`)),
+    onBatchFields: (fields) => {
+      state.rows.forEach((_, index) => edit(index, fields));
+      renderBuilder();
+      renderLog();
+      renderDock();
+      const labels = Object.keys(fields).map((field) => field === "client_or_location" ? "client" : field);
+      flash(note("ok", `Applied the proposed ${labels.join(", ")} to all ${state.rows.length} clips. Approve to save.`));
+    },
   });
   const side = el("div.side", null, builder, chat);
   const bay = el("div.bay", null, log, stage, side);
@@ -166,7 +174,7 @@ export async function reviewView({ view, dock }) {
       { key: "date", field: "year_month", label: "Year-month", placeholder: "2024-07" },
       { key: "desc", field: "description", label: "Description", placeholder: "Robotic Sanding Composite Panel" },
       { key: "client", field: "client_or_location", label: "Client / location", placeholder: "SOLV California" },
-      { key: "seq", field: "sequence", label: "Sequence", placeholder: "001" },
+      { key: "seq", field: "sequence", label: "Sequence (automatic)", placeholder: "001" },
     ];
 
     const segs = el("div.segs");
@@ -176,6 +184,7 @@ export async function reviewView({ view, dock }) {
         id: `seg-${spec.key}`,
         value: row[spec.field] ?? "",
         placeholder: spec.placeholder,
+        disabled: spec.field === "sequence",
         oninput: (event) => {
           edit(index, { [spec.field]: event.target.value });
           paintName();

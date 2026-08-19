@@ -24,6 +24,12 @@ export async function prepareView({ view, dock, go }) {
     maxlength: 7,
   });
 
+  const client = el("input", {
+    type: "text",
+    id: "batchClient",
+    placeholder: "Optional — e.g. SOLV California",
+  });
+
   const setFolder = (path) => {
     if (!path) return;
     folder.value = path;
@@ -42,6 +48,7 @@ export async function prepareView({ view, dock, go }) {
         const result = await api.prepare({
           input_dir: input,
           year_month: yearMonth.value.trim(),
+          client_or_location: client.value.trim(),
           tmp_dir: `${input.replace(/\/$/, "")}/.video-renamer-tmp`,
           sample_count: 0,
           proxy_scale: 1280,
@@ -102,9 +109,15 @@ export async function prepareView({ view, dock, go }) {
           yearMonth,
         ),
         el(
+          "div.field",
+          { style: { marginTop: "14px", maxWidth: "420px" } },
+          el("label", { for: "batchClient" }, "Client / location (optional)"),
+          client,
+        ),
+        el(
           "p.hint",
           null,
-          "Leave blank to read the date from each filename. Set it when a whole shoot belongs to one month.",
+          "Leave the date blank to read it from each filename. Set a date or client here when it applies to every video in this folder.",
         ),
       ),
 
