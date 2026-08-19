@@ -37,6 +37,33 @@ Then open the local app and use the guided flow:
 
 The GUI defaults to `~/.video-renamer/manifest.csv`, so nontechnical users do not need to pass a manifest path. Advanced users can still launch a specific manifest with `uv run scout gui --manifest manifest.csv`. The legacy `video-renamer` command remains available for existing scripts.
 
+## Command quick reference
+
+Run commands from the project directory with `uv run scout`:
+
+```bash
+# Launch the guided web interface
+uv run scout gui
+
+# Prepare videos and write a manifest
+uv run scout prepare --input /path/to/videos --manifest manifest.csv
+
+# Estimate AI review volume without sending frames
+uv run scout ai-review --manifest manifest.csv --provider gemini --dry-run
+
+# Review pending videos with an AI provider
+uv run scout ai-review --manifest manifest.csv --provider gemini --preset balanced
+
+# Preview approved renames
+uv run scout apply --manifest manifest.csv --dry-run
+
+# Apply approved renames in place
+uv run scout apply --manifest manifest.csv
+```
+
+Use `uv run scout <command> --help` for all options. The old `video-renamer`
+command remains available as a compatibility alias.
+
 Folder selection is cross-platform. **Choose folder** uses the native desktop dialog when available. **Browse in app** is an always-available fallback that does not depend on Zenity, AppleScript, or PowerShell successfully opening a dialog.
 
 ## Prepare
@@ -44,7 +71,7 @@ Folder selection is cross-platform. **Choose folder** uses the native desktop di
 Create proxies for local playback, extract source-quality representative frames for AI/manual review, and generate the initial manifest CSV:
 
 ```bash
-video-renamer prepare --input /path/to/videos --manifest manifest.csv --client "SOLV California"
+uv run scout prepare --input /path/to/videos --manifest manifest.csv --client "SOLV California"
 ```
 
 Options:
@@ -77,13 +104,13 @@ Provider-neutral command:
 
 ```bash
 # Estimate frames/cost tier without sending anything
-video-renamer ai-review --manifest manifest.csv --provider gemini --preset balanced --dry-run
+uv run scout ai-review --manifest manifest.csv --provider gemini --preset balanced --dry-run
 
 # Review all pending/blocked rows
-video-renamer ai-review --manifest manifest.csv --provider gemini --preset balanced
+uv run scout ai-review --manifest manifest.csv --provider gemini --preset balanced
 
 # Review specific rows
-video-renamer ai-review --manifest manifest.csv --provider gemini --indices 0 3 5 \
+uv run scout ai-review --manifest manifest.csv --provider gemini --indices 0 3 5 \
   --model gemini-2.5-flash --api-key "$GEMINI_API_KEY"
 ```
 
@@ -104,7 +131,7 @@ For OpenAI or Anthropic, select the provider in the UI and paste its key for the
 
 For a self-hosted deployment on an individual teammate's machine, select
 **OpenAI Codex Subscription (local)** in the Name screen. `uv sync` installs
-the local OpenAI-compatible proxy with Video Renamer, and the app starts it
+the local OpenAI-compatible proxy with Scout, and the app starts it
 automatically on loopback (`127.0.0.1`) when this provider is selected. The app
 also creates a private local request key automatically; it is never shown to
 the browser or sent upstream.
@@ -116,7 +143,7 @@ machine:
 codex login
 ```
 
-This authenticates that teammate's ChatGPT subscription. Video Renamer does
+This authenticates that teammate's ChatGPT subscription. Scout does
 not read, copy, import, or refresh the Codex OAuth file; the bundled local
 proxy owns that interaction. This provider is for private, per-device internal
 use and depends on a community OpenAI-compatible proxy. Keep the ordinary
@@ -170,25 +197,25 @@ Example prompts:
 
 ```bash
 # Preview first
-video-renamer apply --manifest manifest.csv --dry-run
+uv run scout apply --manifest manifest.csv --dry-run
 
 # Apply in place
-video-renamer apply --manifest manifest.csv
+uv run scout apply --manifest manifest.csv
 
 # Or copy/rename into a separate output folder
-video-renamer apply --manifest manifest.csv --output-dir /path/to/output
+uv run scout apply --manifest manifest.csv --output-dir /path/to/output
 ```
 
 ## Output filename format
 
 ```text
-YYYY-MM_Description_Client-Location_###.ext
+YYYY-MM_[Part]_[Process]_[IndustryCode]_[Client-Location]_###.ext
 ```
 
 Example:
 
 ```text
-2024-07_Sanding Automotive Body Panel_SOLV California_002.mov
+2024-07_Recreational Vehicle Panel_Sanding_CR_SOLV California_002.mov
 ```
 
 The review chat can discuss the open batch as well as the clip on screen. An explicit request such as “change the customer name in all videos to Acme” produces a visible all-clips proposal; it still must be reviewed and approved before the manifest changes.
