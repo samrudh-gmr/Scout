@@ -16,6 +16,14 @@ INDUSTRY_CATEGORIES = (
     "Architecture",
     "Aerospace & Defense",
 )
+INDUSTRY_CODES = {
+    "Specialty Vehicle": "SV",
+    "Marine & Boat Building": "MARINE",
+    "General Manufacturing": "GM",
+    "Consumer and Recreation": "CR",
+    "Architecture": "ARCH",
+    "Aerospace & Defense": "AERO",
+}
 
 
 def natural_sort_key(value: str) -> list[object]:
@@ -79,7 +87,7 @@ def build_proposed_name(row: ManifestRow) -> str:
         f"{validate_year_month(row.year_month)}_"
         + (f"{validate_optional_field('part', row.part)}_" if row.part else "")
         + f"{validate_field('description', row.description)}_"
-        + (f"{validate_industry(row.industry).replace(' ', '-').replace('&', 'and')}_" if row.industry else "")
+        + (f"{INDUSTRY_CODES[validate_industry(row.industry)]}_" if row.industry else "")
         + f"{validate_field('client_or_location', row.client_or_location)}_"
         + f"{validate_sequence(row.sequence)}{ext}"
     )

@@ -24,7 +24,7 @@ concrete — rules and vocabulary, not prose.
 `YYYY-MM_[Part]_[Description]_[IndustryIfPartPresent]_[ClientOrLocation]_SequenceNumber.extension`
 
 Examples:
-- `2026-08_Aluminum Wheel_Sanding_Specialty-Vehicle_ClientName_001.mov`
+- `2026-08_Aluminum Wheel_Sanding_SV_ClientName_001.mov`
 - `2026-08_Sanding Surface Test_ClientName_002.mov`
 
 - Underscores separate fields and appear nowhere else.
@@ -56,15 +56,15 @@ Hull` · `Paint Spray Automobile Part` · `Inspection Composite Panel` ·
 
 ## Industry
 
-Only include an industry when a recognizable part is visible. Use exactly one
-of these categories, stored with spaces and rendered with hyphens in filenames:
+Only include an industry when a recognizable part is visible. Store the exact
+category in the manifest and render its compact filename code:
 
-- Specialty Vehicle → `Specialty-Vehicle`
-- Marine & Boat Building → `Marine-and-Boat-Building`
-- General Manufacturing → `General-Manufacturing`
-- Consumer and Recreation → `Consumer-and-Recreation`
-- Architecture → `Architecture`
-- Aerospace & Defense → `Aerospace-and-Defense`
+- Specialty Vehicle → `SV`
+- Marine & Boat Building → `MARINE`
+- General Manufacturing → `GM`
+- Consumer and Recreation → `CR`
+- Architecture → `ARCH`
+- Aerospace & Defense → `AERO`
 
 If there is no identifiable part, leave Industry empty and omit that filename
 segment. Do not use generic terms such as `Part`, `Component`, or `Metal Piece`
@@ -116,12 +116,12 @@ and the filename genuinely give you nothing.
 ## Reference filenames
 
 ```
-2024-03_Composite Aircraft Panel_Sanding_Aerospace-and-Defense_GMR HQ_001.mov
-2024-04_Steel Column_Grinding_Architecture_FABTECH Event_001.mov
-2024-06_Bicycle Frame_Buff and Polish_Consumer-and-Recreation_GMR HQ_001.mov
-2023-09_Welded Metal Frame_Grinding_General-Manufacturing_Performance Composites_001.mov
-2024-07_Fiberglass Boat Hull_Buff and Polish_Marine-and-Boat-Building_GMR HQ_001.mov
-2022-12_Ambulance Body_Sanding_Specialty-Vehicle_Life Line_001.mov
+2024-03_Composite Aircraft Panel_Sanding_AERO_GMR HQ_001.mov
+2024-04_Steel Column_Grinding_ARCH_FABTECH Event_001.mov
+2024-06_Bicycle Frame_Buff and Polish_CR_GMR HQ_001.mov
+2023-09_Welded Metal Frame_Grinding_GM_Performance Composites_001.mov
+2024-07_Fiberglass Boat Hull_Buff and Polish_MARINE_GMR HQ_001.mov
+2022-12_Ambulance Body_Sanding_SV_Life Line_001.mov
 ```
 """
 
@@ -138,8 +138,8 @@ exactly one approved Industry category. If no part is present, leave both
 optional fields empty and keep the established Action + Object Description.
 Industry categories: Specialty Vehicle; Marine & Boat Building; General
 Manufacturing; Consumer and Recreation; Architecture; Aerospace & Defense.
-Render spaces and `&` as hyphens/`and` in filenames, for example
-`Specialty-Vehicle` and `Aerospace-and-Defense`.
+Use these compact filename codes while keeping the full category in the
+manifest: `SV`, `MARINE`, `GM`, `CR`, `ARCH`, and `AERO`.
 """
 
 
@@ -170,6 +170,15 @@ def _is_previous_part_action_guide(text: str) -> bool:
     ))
 
 
+def _is_previous_process_guide(text: str) -> bool:
+    """Recognize the separated Part + Process guide before code rendering."""
+    return all(marker in text for marker in (
+        "`YYYY-MM_[Part]_[Description]_[IndustryIfPartPresent]_[ClientOrLocation]_SequenceNumber.extension`",
+        "`2026-08_Aluminum Wheel_Sanding Automotive Body Panel_Specialty-Vehicle_ClientName_001.mov`",
+        "Keep the established **Action + Object** Description behavior.",
+    ))
+
+
 def ensure_guide() -> Path:
     """Create the guide on first use. An existing file is never overwritten."""
     if not GUIDE_PATH.exists():
@@ -177,7 +186,7 @@ def ensure_guide() -> Path:
         GUIDE_PATH.write_text(DEFAULT_GUIDE, encoding="utf-8")
     else:
         existing = GUIDE_PATH.read_text(encoding="utf-8")
-        if _is_untouched_legacy_guide(existing) or _is_previous_industry_guide(existing) or _is_previous_part_action_guide(existing):
+        if _is_untouched_legacy_guide(existing) or _is_previous_industry_guide(existing) or _is_previous_part_action_guide(existing) or _is_previous_process_guide(existing):
             GUIDE_PATH.write_text(DEFAULT_GUIDE, encoding="utf-8")
     return GUIDE_PATH
 

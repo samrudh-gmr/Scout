@@ -472,7 +472,7 @@ def test_build_proposed_name_includes_industry_when_part_is_present() -> None:
         client_or_location="ClientName",
         sequence="1",
     )
-    assert build_proposed_name(row) == "2026-08_Aluminum Wheel_Sanding_Specialty-Vehicle_ClientName_001.mov"
+    assert build_proposed_name(row) == "2026-08_Aluminum Wheel_Sanding_SV_ClientName_001.mov"
 
 
 def test_build_proposed_name_omits_empty_industry() -> None:
@@ -975,7 +975,7 @@ def test_save_persists_optional_industry_segment(tmp_path: Path) -> None:
     assert response.status_code == 200, response.json()
     row = read_manifest_csv(manifest)[0]
     assert row.industry == "Specialty Vehicle"
-    assert row.proposed_name == "2026-08_Aluminum Wheel_Sanding_Specialty-Vehicle_ClientName_001.mov"
+    assert row.proposed_name == "2026-08_Aluminum Wheel_Sanding_SV_ClientName_001.mov"
 
 
 def test_api_key_is_stored_privately_and_never_returned(tmp_path: Path, monkeypatch) -> None:

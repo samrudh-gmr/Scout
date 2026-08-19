@@ -92,11 +92,20 @@ export const INDUSTRIES = [
   "Aerospace & Defense",
 ];
 
+export const INDUSTRY_CODES = {
+  "Specialty Vehicle": "SV",
+  "Marine & Boat Building": "MARINE",
+  "General Manufacturing": "GM",
+  "Consumer and Recreation": "CR",
+  "Architecture": "ARCH",
+  "Aerospace & Defense": "AERO",
+};
+
 export function checkIndustry(value) {
   const clean = String(value || "").trim();
   if (!clean) return { value: "", filenameValue: "", error: "" };
   if (!INDUSTRIES.includes(clean)) return { value: clean, filenameValue: clean, error: "industry must use an approved category" };
-  return { value: clean, filenameValue: clean.replaceAll(" ", "-").replace("&", "and"), error: "" };
+  return { value: clean, filenameValue: INDUSTRY_CODES[clean], error: "" };
 }
 
 export function checkOptionalSegment(name, value) {
