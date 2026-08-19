@@ -19,6 +19,7 @@ from video_reviewer.ai_review.models import (
 from video_reviewer.ai_review.providers.gemini import GeminiProvider
 from video_reviewer.ai_review.providers.anthropic import AnthropicProvider
 from video_reviewer.ai_review.providers.openai import OpenAIProvider
+from video_reviewer.ai_review.providers.codex_proxy import CodexProxyProvider
 from video_reviewer.manifest import manifest_transaction, REVIEW_APPROVED, REVIEW_BLOCKED, REVIEW_NEEDS_REVIEW, REVIEW_PENDING, read_manifest_csv, write_manifest_csv
 from video_reviewer.media import extract_sample_frames, create_frame_dir
 from video_reviewer.sop import build_proposed_name
@@ -27,6 +28,7 @@ _PROVIDERS = {
     "gemini": GeminiProvider(),
     "openai": OpenAIProvider(),
     "anthropic": AnthropicProvider(),
+    "codex-proxy": CodexProxyProvider(),
 }
 
 

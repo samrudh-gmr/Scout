@@ -44,6 +44,7 @@ class ProviderStatus:
     env_key_names: tuple[str, ...] = ()
     cheap_model: str = ""
     accurate_model: str = ""
+    models: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)

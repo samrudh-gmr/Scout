@@ -727,6 +727,19 @@ wheels = [
 ]
 
 [[package]]
+name = "openai-api-server-via-codex"
+version = "0.2.0"
+source = { registry = "https://pypi.org/simple" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/30/1e/cb449148ee0c48e6987d78ccf632b1f885c4999d1e9de044cc435698b9e0/openai_api_server_via_codex-0.2.0-py3-none-macosx_10_15_x86_64.whl", hash = "sha256:4f4c696196ac1f3866c66521a23ce1cd1ebf92ea60be2f1a0ed00be223f479e5", size = 2942413, upload-time = "2026-08-13T08:08:46.041Z" },
+    { url = "https://files.pythonhosted.org/packages/c7/c1/7e34a63c1bf197dcf2051577ab9dfabab70a8cbf56a529966e29550c7213/openai_api_server_via_codex-0.2.0-py3-none-macosx_11_0_arm64.whl", hash = "sha256:6059b2ad02a16add49fd41422ce1ca8468cb37a0cbc596f9246ead0696d86da7", size = 2748941, upload-time = "2026-08-13T08:08:47.994Z" },
+    { url = "https://files.pythonhosted.org/packages/b2/9b/e1c5e110ff02afdedd9d8fe22676c559ad8e711fc2b9552cefe638a914f9/openai_api_server_via_codex-0.2.0-py3-none-manylinux_2_17_aarch64.whl", hash = "sha256:9d39a4916580c1701eae2eec2e641efa1ecb713f99f52af23addaf0057ad62cf", size = 2660233, upload-time = "2026-08-13T08:08:49.492Z" },
+    { url = "https://files.pythonhosted.org/packages/d6/87/aa2d924a1ef0cbe1949b8fd4e3a313bf3f141a45c048cd6ca15515a03a5d/openai_api_server_via_codex-0.2.0-py3-none-manylinux_2_17_x86_64.whl", hash = "sha256:06b446cf139092d20ad0089e50af21270d9b37af4f59a4f3c7a66b6530a69b8a", size = 2903471, upload-time = "2026-08-13T08:08:51.025Z" },
+    { url = "https://files.pythonhosted.org/packages/b0/43/719f07c68fc9b825fade5c5675d7cca6bc67873166ce9078cf8ec8092d6f/openai_api_server_via_codex-0.2.0-py3-none-win_amd64.whl", hash = "sha256:d33cb326d1e72f38d06ba76a1e95fe353f429c6ffd8fc0998285581a520b7707", size = 2968035, upload-time = "2026-08-13T08:08:52.709Z" },
+    { url = "https://files.pythonhosted.org/packages/2a/d9/883d2892e0442f2e9e412262c21c291f84a2dd10a46d5c23d0ae63eb9adf/openai_api_server_via_codex-0.2.0-py3-none-win_arm64.whl", hash = "sha256:0bc0100f627b6c8fc7027bafa20904d24d221dbd093283ea44c99c90ef3d933d", size = 2683458, upload-time = "2026-08-13T08:08:54.478Z" },
+]
+
+[[package]]
 name = "packaging"
 version = "26.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1289,6 +1302,7 @@ dependencies = [
     { name = "google-genai" },
     { name = "mcp" },
     { name = "openai" },
+    { name = "openai-api-server-via-codex" },
     { name = "python-multipart" },
     { name = "static-ffmpeg" },
     { name = "uvicorn" },
@@ -1308,6 +1322,7 @@ requires-dist = [
     { name = "google-genai", specifier = ">=1.0" },
     { name = "mcp", specifier = ">=1.0" },
     { name = "openai", specifier = ">=1.0" },
+    { name = "openai-api-server-via-codex", specifier = ">=0.2.0" },
     { name = "python-multipart", specifier = ">=0.0.9" },
     { name = "static-ffmpeg", specifier = ">=2.1" },
     { name = "uvicorn", specifier = ">=0.29" },

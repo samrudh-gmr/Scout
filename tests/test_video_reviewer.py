@@ -452,6 +452,48 @@ def test_ai_providers_are_registered_and_report_provider_specific_keys(monkeypat
     assert "OPENAI_API_KEY" in status.message
 
 
+def test_codex_proxy_provider_starts_loopback_proxy_and_lists_models(monkeypatch) -> None:
+    from video_reviewer.ai_review import provider_status
+
+    commands: list[list[str]] = []
+    health_checks = iter([False, True])
+    monkeypatch.setattr("video_reviewer.ai_review.providers.codex_proxy.load_api_key", lambda provider: "")
+    monkeypatch.setattr("video_reviewer.ai_review.providers.codex_proxy.save_api_key", lambda provider, key: None)
+    monkeypatch.setattr("video_reviewer.ai_review.providers.codex_proxy.secrets.token_urlsafe", lambda size: "generated-key")
+    monkeypatch.setattr("video_reviewer.ai_review.providers.codex_proxy.proxy_is_healthy", lambda base_url, api_key: next(health_checks))
+    monkeypatch.setattr("video_reviewer.ai_review.providers.codex_proxy.time.sleep", lambda _: None)
+
+    class Process:
+        def poll(self):
+            return None
+
+    monkeypatch.setattr(
+        "video_reviewer.ai_review.providers.codex_proxy.subprocess.Popen",
+        lambda command, **kwargs: commands.append(command) or Process(),
+    )
+    monkeypatch.setattr(
+        "video_reviewer.ai_review.providers.codex_proxy.CodexProxyProvider.list_models",
+        lambda self, api_key=None: ["gpt-5.6-luna", "gpt-5.6-sol"],
+    )
+
+    status = provider_status("codex-proxy")
+
+    assert status.available and status.has_key
+    assert status.models == ("gpt-5.6-luna", "gpt-5.6-sol")
+    assert commands and commands[0][:2] == [commands[0][0], "--host"]
+    assert "127.0.0.1" in commands[0]
+    assert "--api-key" in commands[0]
+
+
+def test_codex_proxy_rejects_non_loopback_url(monkeypatch) -> None:
+    from video_reviewer.ai_review import provider_status
+
+    monkeypatch.setattr("video_reviewer.ai_review.providers.codex_proxy.codex_proxy_base_url", lambda: "https://example.test/v1")
+    status = provider_status("codex-proxy")
+    assert not status.available
+    assert "localhost" in status.message.lower()
+
+
 def test_pick_dir_returns_actionable_missing_zenity_error(monkeypatch, tmp_path: Path) -> None:
     from video_reviewer.gui import _pick_directory_sync
 

@@ -9,6 +9,7 @@ _CONFIG_DIR = Path.home() / ".video-renamer"
 _CONFIG_FILE = _CONFIG_DIR / "config.json"
 _CORRECTIONS_FILE = _CONFIG_DIR / "corrections.json"
 _MAX_CORRECTIONS = 50
+_DEFAULT_CODEX_PROXY_BASE_URL = "http://127.0.0.1:18080/v1"
 
 
 def read_config() -> dict[str, str]:
@@ -23,6 +24,10 @@ def read_config() -> dict[str, str]:
 def write_config(data: dict[str, str]) -> None:
     _CONFIG_DIR.mkdir(parents=True, exist_ok=True)
     _CONFIG_FILE.write_text(json.dumps(data, indent=2), encoding="utf-8")
+
+
+def codex_proxy_base_url() -> str:
+    return read_config().get("codex_proxy_base_url", _DEFAULT_CODEX_PROXY_BASE_URL).rstrip("/")
 
 
 def load_corrections() -> list[dict[str, str]]:

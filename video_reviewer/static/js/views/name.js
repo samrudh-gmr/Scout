@@ -26,7 +26,8 @@ export async function nameView({ view, dock }) {
   );
   presetSelect.value = state.preset;
 
-  const modelInput = el("input", { type: "text", id: "model", placeholder: "provider default" });
+  const modelOptions = el("datalist", { id: "modelOptions" });
+  const modelInput = el("input", { type: "text", id: "model", list: "modelOptions", placeholder: "provider default" });
 
   const runButton = el("button.btn.primary", { onclick: () => run() }, "Name every clip");
 
@@ -43,6 +44,14 @@ export async function nameView({ view, dock }) {
   function renderKeySlot() {
     clear(keySlot);
     const names = (status.env_key_names || []).join(" or ");
+
+    if (status.provider === "codex-proxy") {
+      keySlot.append(
+        el("span.pill.approved", null, "Protected local connection"),
+        el("p.hint", null, "Video Renamer generated a private loopback key automatically. Your Codex sign-in stays with the official Codex CLI."),
+      );
+      return;
+    }
 
     if (status.saved_key) {
       keySlot.append(
@@ -108,6 +117,11 @@ export async function nameView({ view, dock }) {
     }
     providerSelect.value = status.provider;
     modelInput.placeholder = status.default_model || "provider default";
+    clear(modelOptions);
+    const models = status.models || [];
+    for (const model of models.length ? models : [status.default_model, status.cheap_model, status.accurate_model]) {
+      if (model) modelOptions.append(el("option", { value: model }));
+    }
 
     renderKeySlot();
     refreshEstimate();
@@ -301,7 +315,7 @@ export async function nameView({ view, dock }) {
           "div",
           { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: "14px" } },
           el("div.field", null, el("label", { for: "preset" }, "Detail"), presetSelect),
-          el("div.field", null, el("label", { for: "model" }, "Model override"), modelInput),
+          el("div.field", null, el("label", { for: "model" }, "Model"), modelInput, modelOptions),
         ),
         estimate,
       ),

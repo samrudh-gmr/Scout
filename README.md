@@ -9,6 +9,7 @@ Production-focused video reviewer and renamer for the GMR SOP. It prepares video
 - `uv` recommended, or `pip`
 - Optional: Claude Desktop for MCP review
 - Optional: Gemini, OpenAI, or Anthropic API key for API-key AI review
+- Optional: an official Codex CLI ChatGPT sign-in for local Codex-subscription review
 - Native folder picker: Zenity on Linux, AppleScript on macOS, and PowerShell/.NET on Windows
 
 ## Installation
@@ -29,7 +30,7 @@ Then open the local app and use the guided flow:
 
 1. Click **Choose folder** and select the video folder; optionally set the date and client shared by that folder.
 2. Click **Prepare videos** to create the manifest and sample frames.
-3. Paste a provider API key or set the provider env var.
+3. Choose an API-key provider and paste its key, or choose **OpenAI Codex Subscription (local)** after completing its one-time sign-in.
 4. Pick a cost/accuracy preset.
 5. Review uncertain rows manually.
 6. Preview renames, then apply.
@@ -70,6 +71,7 @@ Supported providers:
 | Gemini | `gemini` | `GEMINI_API_KEY` or `GOOGLE_API_KEY` |
 | OpenAI | `openai` | `OPENAI_API_KEY` |
 | Anthropic | `anthropic` | `ANTHROPIC_API_KEY` |
+| OpenAI Codex Subscription (local) | `codex-proxy` | Not applicable |
 
 Provider-neutral command:
 
@@ -97,6 +99,28 @@ export GEMINI_API_KEY="your-key"
 ```
 
 For OpenAI or Anthropic, select the provider in the UI and paste its key for the current run, or set `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` before launch.
+
+### Local Codex subscription setup
+
+For a self-hosted deployment on an individual teammate's machine, select
+**OpenAI Codex Subscription (local)** in the Name screen. `uv sync` installs
+the local OpenAI-compatible proxy with Video Renamer, and the app starts it
+automatically on loopback (`127.0.0.1`) when this provider is selected. The app
+also creates a private local request key automatically; it is never shown to
+the browser or sent upstream.
+
+The one manual prerequisite is the official Codex CLI sign-in on that same
+machine:
+
+```bash
+codex login
+```
+
+This authenticates that teammate's ChatGPT subscription. Video Renamer does
+not read, copy, import, or refresh the Codex OAuth file; the bundled local
+proxy owns that interaction. This provider is for private, per-device internal
+use and depends on a community OpenAI-compatible proxy. Keep the ordinary
+OpenAI API-key provider available for supported production/API use.
 
 The app does not write pasted API keys to the manifest. External API review sends the selected rows' sampled frames plus metadata to the selected provider. For confidential footage, use an account/project whose data retention/training settings match your policy.
 
