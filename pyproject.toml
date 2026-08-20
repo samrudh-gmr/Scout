@@ -18,7 +18,11 @@ dependencies = [
 
 [project.scripts]
 scout = "video_reviewer.cli:main"
+scout-desktop = "video_reviewer.desktop:main"
 video-renamer = "video_reviewer.cli:main"
+
+[project.optional-dependencies]
+desktop = ["pywebview>=5.4"]
 
 [build-system]
 requires = ["setuptools>=68"]

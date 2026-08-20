@@ -37,6 +37,19 @@ Then open the local app and use the guided flow:
 
 The GUI defaults to `~/.video-renamer/manifest.csv`, so nontechnical users do not need to pass a manifest path. Advanced users can still launch a specific manifest with `uv run scout gui --manifest manifest.csv`. The legacy `video-renamer` command remains available for existing scripts.
 
+## macOS app build
+
+For a user who should not need Python, `uv`, or Terminal, build Scout as a native macOS application on a Mac:
+
+```bash
+./scripts/build_macos_app.sh
+open dist/Scout.app
+```
+
+The resulting `Scout.app` opens the GUI in its own native window. The developer workflow above remains available, but an end user only needs to open the app. The first build requires the free `desktop` extra and PyInstaller; neither is needed by the end user. If macOS shows an unidentified-developer warning for an unsigned internal build, right-click the app and choose **Open** once.
+
+The packaged app keeps the same local state and Codex setup as the CLI. A user may complete the one-time `codex login`, then use Scout without running `uv sync` or any other Terminal command during normal operation.
+
 ## Command quick reference
 
 Run commands from the project directory with `uv run scout`:
