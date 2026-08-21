@@ -23,6 +23,7 @@ from video_reviewer.manifest import (
     write_manifest_csv,
 )
 from video_reviewer.sop import build_proposed_name
+from video_reviewer.updates import check_latest_release
 from video_reviewer.workflow import assign_sequences_by_name
 
 logger = logging.getLogger("video_renamer")
@@ -123,6 +124,11 @@ def create_app(manifest_path: Path | None = None) -> FastAPI:
             "manifest_path": str(manifest_path),
             "default_model": "",
         })
+
+    @app.get("/api/app-info")
+    async def api_app_info() -> JSONResponse:
+        """Return local version and best-effort GitHub Release update status."""
+        return JSONResponse(check_latest_release())
 
 
     # ── /api/browse-dir: cross-platform in-app fallback ─────────────────────

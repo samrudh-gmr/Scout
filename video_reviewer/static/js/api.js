@@ -32,6 +32,8 @@ function post(path, body) {
 export const api = {
   rows: () => request("/rows"),
 
+  appInfo: () => request("/app-info"),
+
   save: (rows) => post("/save", { rows }),
 
   prepare: (body) => post("/run-prepare", body),

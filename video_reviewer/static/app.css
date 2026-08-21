@@ -134,6 +134,24 @@ button, input, select, textarea { font: inherit; color: inherit; }
 
 .topbar .spacer { flex: 1; }
 
+.brand small {
+  color: var(--dim);
+  font: 500 11px/1 var(--mono);
+  letter-spacing: .02em;
+}
+
+.update-btn {
+  border: 1px solid color-mix(in srgb, var(--mint) 45%, var(--line-str));
+  border-radius: 999px;
+  padding: 7px 11px;
+  color: var(--mint);
+  background: color-mix(in srgb, var(--mint) 10%, transparent);
+  font: 600 11px/1 var(--mono);
+  cursor: pointer;
+}
+
+.update-btn:hover { background: color-mix(in srgb, var(--mint) 18%, transparent); }
+
 .manifest {
   font-family: var(--mono);
   font-size: 11px;

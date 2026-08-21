@@ -50,6 +50,19 @@ The resulting `Scout.app` opens the GUI in its own native window. The developer 
 
 The packaged app keeps the same local state and Codex setup as the CLI. A user may complete the one-time `codex login`, then use Scout without running `uv sync` or any other Terminal command during normal operation.
 
+## Releases and updates
+
+Scout checks the public GitHub Releases page for a newer version when it starts. If one is available, the top bar shows an **Update to vX.Y.Z** button. Clicking it opens the release page so the user can download and install the latest DMG. The first updater intentionally uses the normal macOS installer flow instead of replacing the running app automatically.
+
+Releases are versioned with Git tags and built by GitHub Actions on macOS:
+
+```bash
+git tag v0.3.0
+git push origin v0.3.0
+```
+
+The `release-macos.yml` workflow builds `Scout.app`, packages a DMG, and attaches it to the GitHub Release. A manual workflow run is also available for testing the macOS app artifact without publishing a release. GitHub Actions and Release hosting are free for this small internal workflow within GitHub's available limits.
+
 ## Uninstall
 
 To remove the packaged macOS app, quit Scout and delete `Scout.app` from Applications. If you only built it locally, delete `dist/Scout.app` instead.

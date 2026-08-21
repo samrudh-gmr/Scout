@@ -1,6 +1,7 @@
 // Shell: theme, the pipeline rail, and hash routing between the four stages.
 
 import { el, clear, $ } from "./dom.js";
+import { api } from "./api.js";
 import { state, subscribe, loadRows, STAGES, stageDone, counts } from "./store.js";
 import { prepareView } from "./views/prepare.js";
 import { nameView } from "./views/name.js";
@@ -21,6 +22,17 @@ applyTheme(localStorage.getItem("theme") || "dark");
 $("#theme").addEventListener("click", () => {
   applyTheme(document.documentElement.getAttribute("data-theme") === "dark" ? "light" : "dark");
 });
+
+function renderAppInfo(info) {
+  const version = $("#version");
+  const update = $("#update");
+  version.textContent = info.current_version ? `v${info.current_version}` : "";
+  if (!info.update_available || !info.release_url) return;
+  update.hidden = false;
+  update.textContent = `Update to v${info.latest_version}`;
+  update.title = "Open the latest Scout release installer";
+  update.addEventListener("click", () => window.open(info.release_url, "_blank", "noopener"), { once: true });
+}
 
 // ── rail ────────────────────────────────────────────────────────────────────
 
@@ -91,6 +103,7 @@ subscribe(() => renderRail(currentStage()));
 // ── boot ────────────────────────────────────────────────────────────────────
 
 (async function start() {
+  api.appInfo().then(renderAppInfo).catch(() => {});
   try {
     await loadRows();
   } catch (error) {
