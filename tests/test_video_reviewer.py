@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 
 from video_reviewer.manifest import (
@@ -13,7 +14,7 @@ from video_reviewer.manifest import (
     write_manifest_csv,
 )
 from video_reviewer.sop import build_proposed_name, infer_year_month_from_name, validate_field
-from video_reviewer.workflow import apply_manifest, build_prepare_manifest
+from video_reviewer.workflow import apply_manifest, build_prepare_manifest, resolve_year_month, PrepareResult
 
 
 def write_fake_video(path: Path, size_bytes: int = 1024) -> None:
@@ -65,7 +66,7 @@ def test_prepare_creates_manifest_rows(monkeypatch, tmp_path: Path) -> None:
         tmp_dir=tmp_path / "tmp",
         proxy_scale=1280,
         sample_count=3,
-    )
+    ).rows
     assert len(rows) == 1
     assert rows[0].review_status == REVIEW_PENDING
     assert rows[0].sequence == "001"
@@ -86,7 +87,7 @@ def test_prepare_applies_optional_folder_client(monkeypatch, tmp_path: Path) -> 
     rows = build_prepare_manifest(
         input_dir=source_dir, year_month="2024-07", client_or_location="SOLV California",
         start_seq=1, tmp_dir=tmp_path / "tmp", proxy_scale=1280, sample_count=1,
-    )
+    ).rows
 
     assert [row.client_or_location for row in rows] == ["SOLV California", "SOLV California"]
 
@@ -102,6 +103,31 @@ def test_sequences_only_increment_for_repeated_complete_names() -> None:
     assign_sequences_by_name(rows)
 
     assert [row.sequence for row in rows] == ["001", "001", "002"]
+
+
+def test_assign_sequences_never_moves_an_applied_row(tmp_path: Path) -> None:
+    """An applied row's filename is already a fact on disk; its sequence (and
+    therefore its proposed_name) must never be reassigned by a later save,
+    even when another row is edited into the same name group."""
+    from video_reviewer.workflow import assign_sequences_by_name
+
+    applied = ManifestRow(
+        source_path=str(tmp_path / "a.mov"), year_month="2024-07", description="Sanding Panel",
+        client_or_location="Acme", sequence="001", review_status=REVIEW_APPLIED,
+        proposed_name="2024-07_Sanding Panel_Acme_001.mov",
+    )
+    edited = ManifestRow(
+        source_path=str(tmp_path / "b.mov"), year_month="2024-07", description="Sanding Panel",
+        client_or_location="Acme", sequence="001", review_status=REVIEW_APPROVED,
+    )
+    rows = [applied, edited]
+
+    assign_sequences_by_name(rows)
+
+    assert applied.sequence == "001"
+    assert applied.proposed_name == "2024-07_Sanding Panel_Acme_001.mov"
+    assert edited.sequence == "002"
+    assert build_proposed_name(edited) == "2024-07_Sanding Panel_Acme_002.mov"
 
 
 def test_prepare_without_batch_year_month_uses_filename_inference(monkeypatch, tmp_path: Path) -> None:
@@ -128,7 +154,7 @@ def test_prepare_without_batch_year_month_uses_filename_inference(monkeypatch, t
         tmp_dir=tmp_path / "tmp",
         proxy_scale=1280,
         sample_count=3,
-    )
+    ).rows
     assert rows[0].year_month == "2024-07"
     assert "source filename pattern" in rows[0].source_hints
 
@@ -163,7 +189,7 @@ def test_prepare_without_batch_year_month_uses_creation_time(monkeypatch, tmp_pa
         tmp_dir=tmp_path / "tmp",
         proxy_scale=1280,
         sample_count=3,
-    )
+    ).rows
     assert rows[0].year_month == "2024-08"
     assert "embedded creation_time" in rows[0].source_hints
 
@@ -192,9 +218,63 @@ def test_prepare_without_any_date_leaves_year_month_blank(monkeypatch, tmp_path:
         tmp_dir=tmp_path / "tmp",
         proxy_scale=1280,
         sample_count=3,
-    )
+    ).rows
     assert rows[0].year_month == ""
     assert "needs manual review" in rows[0].source_hints
+
+
+def test_capture_time_uses_raw_camera_digits_with_no_timezone_conversion() -> None:
+    """We deliberately don't try to convert a device's reported creation_time
+    to "true" local time — devices disagree on whether that field is real UTC
+    or just local wall-clock time mislabeled as UTC, so any conversion we
+    picked would be right for some cameras and silently wrong for others.
+    Instead we just use whatever digits the camera/container reported,
+    unchanged, the same way for every device."""
+    from video_reviewer.media import parse_creation_time
+
+    assert parse_creation_time("2024-01-31T23:45:00Z") == "2024-01-31T23:45:00+00:00"
+    assert parse_creation_time("2024-01-31T23:45:00-08:00") == "2024-01-31T23:45:00-08:00"
+
+    resolved, warnings = resolve_year_month("", "", "2024-01-31T23:45:00Z")
+    assert resolved == "2024-01"
+    assert "embedded creation_time" in warnings[0]
+
+
+def test_prepare_skips_a_corrupt_file_but_keeps_the_rest_of_the_batch(monkeypatch, tmp_path: Path) -> None:
+    source_dir = tmp_path / "videos"
+    source_dir.mkdir()
+    good = source_dir / "good.mov"
+    bad = source_dir / "bad.mov"
+    write_fake_video(good)
+    write_fake_video(bad)
+
+    monkeypatch.setattr("video_reviewer.workflow.require_fftools", lambda: None)
+    monkeypatch.setattr(
+        "video_reviewer.workflow.probe_media",
+        lambda path: {"capture_time": "", "duration": "10", "size": "1024", "width": "1920", "height": "1080"},
+    )
+
+    def fake_run_ffmpeg_proxy(source_path: Path, proxy_path: Path, scale: int) -> None:
+        if source_path.name == "bad.mov":
+            raise subprocess.CalledProcessError(1, ["ffmpeg"], stderr=b"moov atom not found")
+        proxy_path.write_bytes(b"proxy")
+
+    monkeypatch.setattr("video_reviewer.workflow.run_ffmpeg_proxy", fake_run_ffmpeg_proxy)
+    monkeypatch.setattr("video_reviewer.workflow.extract_sample_frames", lambda *args, **kwargs: [])
+
+    result = build_prepare_manifest(
+        input_dir=source_dir,
+        year_month="2024-07",
+        start_seq=1,
+        tmp_dir=tmp_path / "tmp",
+        proxy_scale=1280,
+        sample_count=1,
+    )
+
+    assert len(result.rows) == 1
+    assert result.rows[0].source_path.endswith("good.mov")
+    assert len(result.skipped) == 1
+    assert "bad.mov" in result.skipped[0]
 
 
 def test_sample_timestamps_use_midpoints() -> None:
@@ -335,6 +415,56 @@ def test_review_rows_approves_high_confidence(monkeypatch, tmp_path: Path) -> No
     saved = read_manifest_csv(manifest)
     assert saved[0].ai_confidence == "0.92"
     assert saved[0].ai_rationale == "Operator sanding a panel."
+
+
+def test_review_rows_dedupes_identical_classifications_without_desync(monkeypatch, tmp_path: Path) -> None:
+    """Two rows the model classifies identically must land on distinct
+    proposed_names, and — since resequencing the second row can renumber the
+    first — the first row's proposed_name must stay in sync with its
+    (possibly new) sequence rather than going stale."""
+    from video_reviewer import gemini_review
+
+    def make_row(name: str) -> ManifestRow:
+        frame = tmp_path / f"{name}_frame_00.jpg"
+        frame.write_bytes(b"\xff\xd8\xff\xd9")
+        source = tmp_path / f"{name}.mov"
+        source.write_bytes(b"0")
+        return ManifestRow(
+            source_path=str(source.resolve()),
+            sample_frames=str(frame.resolve()),
+            year_month="2024-07",
+            sequence="001",
+            review_status=REVIEW_PENDING,
+        )
+
+    manifest = tmp_path / "manifest.csv"
+    write_manifest_csv(manifest, [make_row("clip_a"), make_row("clip_b")])
+
+    monkeypatch.setattr("video_reviewer.ai_review.providers.gemini.GeminiProvider._sdk_installed", lambda self: True)
+    monkeypatch.setattr(
+        "video_reviewer.ai_review.providers.gemini.GeminiProvider._generate",
+        lambda self, key, model, prompt, frames: {
+            "description": "Sanding Metal Panel",
+            "client_or_location": "GMR HQ",
+            "is_manual": False,
+            "confidence": 0.92,
+            "rationale": "Operator sanding a panel.",
+            "flags": [],
+        },
+    )
+
+    results = gemini_review.review_rows(manifest, [0, 1], api_key="test-key")
+    assert [r.ok for r in results] == [True, True]
+
+    saved = read_manifest_csv(manifest)
+    names = [row.proposed_name for row in saved]
+    sequences = [row.sequence for row in saved]
+    assert len(set(names)) == 2, f"both rows collided on the same name: {names}"
+    assert sequences == ["001", "002"]
+    assert names == [
+        "2024-07_Sanding Metal Panel_GMR HQ_001.mov",
+        "2024-07_Sanding Metal Panel_GMR HQ_002.mov",
+    ]
 
 
 def test_ai_review_preserves_prepare_client_override(tmp_path: Path) -> None:
@@ -485,6 +615,39 @@ def test_build_proposed_name_omits_empty_industry() -> None:
         sequence="2",
     )
     assert build_proposed_name(row) == "2026-08_Sanding Surface Test_ClientName_002.mov"
+
+
+def test_build_proposed_name_treats_whitespace_only_part_as_empty() -> None:
+    """A part field that is only whitespace must be omitted, not rendered as a
+    bare "_" segment (which would produce a malformed double underscore)."""
+    row = ManifestRow(
+        source_path="/tmp/test.mov",
+        year_month="2026-08",
+        part="   ",
+        description="Sanding Surface Test",
+        client_or_location="ClientName",
+        sequence="1",
+    )
+    name = build_proposed_name(row)
+    assert name == "2026-08_Sanding Surface Test_ClientName_001.mov"
+    assert "__" not in name
+
+
+def test_build_proposed_name_treats_whitespace_only_industry_as_empty() -> None:
+    """A whitespace-only industry must be omitted like a genuinely empty one,
+    not reach INDUSTRY_CODES[""] and raise an uncaught KeyError."""
+    row = ManifestRow(
+        source_path="/tmp/wheel.mov",
+        year_month="2026-08",
+        part="Aluminum Wheel",
+        description="Sanding",
+        industry="   ",
+        client_or_location="ClientName",
+        sequence="1",
+    )
+    name = build_proposed_name(row)
+    assert name == "2026-08_Aluminum Wheel_Sanding_ClientName_001.mov"
+    assert "__" not in name
 
 
 def test_build_proposed_name_includes_part_without_industry() -> None:
@@ -720,7 +883,7 @@ def test_prepare_empty_folder_keeps_existing_manifest(monkeypatch, tmp_path: Pat
     write_manifest_csv(manifest, [existing])
     empty = tmp_path / "empty"
     empty.mkdir()
-    monkeypatch.setattr("video_reviewer.workflow.build_prepare_manifest", lambda **kwargs: [])
+    monkeypatch.setattr("video_reviewer.workflow.build_prepare_manifest", lambda **kwargs: PrepareResult(rows=[], skipped=[]))
 
     response = TestClient(create_app(manifest)).post(
         "/api/run-prepare",
