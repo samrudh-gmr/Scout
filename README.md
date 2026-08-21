@@ -50,6 +50,26 @@ The resulting `Scout.app` opens the GUI in its own native window. The developer 
 
 The packaged app keeps the same local state and Codex setup as the CLI. A user may complete the one-time `codex login`, then use Scout without running `uv sync` or any other Terminal command during normal operation.
 
+## Uninstall
+
+To remove the packaged macOS app, quit Scout and delete `Scout.app` from Applications. If you only built it locally, delete `dist/Scout.app` instead.
+
+Scout stores its local manifest, API keys, corrections, and Codex proxy settings under `~/.video-renamer/`. To remove that Scout-specific data as well:
+
+```bash
+rm -rf ~/.video-renamer
+```
+
+That command permanently removes Scout's saved settings and locally stored provider keys. It does **not** remove source videos, renamed videos, or video folders selected in the app.
+
+For a developer checkout, remove the repository only if you no longer need the source or its local environment:
+
+```bash
+rm -rf /path/to/Scout
+```
+
+The repository's `.venv`, `build/`, and `dist/` directories are project-local. Do not remove the entire `~/.cache/uv` directory unless you intentionally want to clear caches for every project using `uv`. Scout also does not own or delete the official Codex CLI's sign-in credentials; manage those separately through the Codex CLI's own account/sign-out workflow.
+
 ## Command quick reference
 
 Run commands from the project directory with `uv run scout`:
