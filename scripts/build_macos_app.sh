@@ -21,8 +21,15 @@ rm -rf "$ICONSET_DIR"
 uv run --with Pillow python scripts/create_macos_icon.py "$ICONSET_DIR"
 iconutil -c icns "$ICONSET_DIR" -o "$ICON_FILE"
 
-# PyInstaller produces a self-contained .app. The app uses static-ffmpeg's
-# existing first-run fallback if ffmpeg is not already present on the Mac.
+# PyInstaller produces a self-contained .app. The local Codex proxy is a
+# separate console entrypoint, so explicitly bundle its executable beside the
+# Scout executable; the runtime looks for it next to sys.executable.
+PROXY_BIN="$(command -v openai-api-server-via-codex || true)"
+if [[ -z "$PROXY_BIN" || ! -x "$PROXY_BIN" ]]; then
+  echo "The Codex proxy executable is missing. Run 'uv sync' and rebuild Scout." >&2
+  exit 1
+fi
+
 uv run --extra desktop --with pyinstaller pyinstaller \
   --noconfirm \
   --clean \
@@ -31,6 +38,7 @@ uv run --extra desktop --with pyinstaller pyinstaller \
   --icon "$ICON_FILE" \
   --paths . \
   --add-data "video_reviewer/static:video_reviewer/static" \
+  --add-binary "$PROXY_BIN:." \
   --collect-all webview \
   --collect-submodules video_reviewer \
   video_reviewer/desktop.py
