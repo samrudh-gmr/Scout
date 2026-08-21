@@ -23,15 +23,36 @@ $("#theme").addEventListener("click", () => {
   applyTheme(document.documentElement.getAttribute("data-theme") === "dark" ? "light" : "dark");
 });
 
+let releaseUrl = null;
+
 function renderAppInfo(info) {
   const version = $("#version");
   const update = $("#update");
   version.textContent = info.current_version ? `v${info.current_version}` : "";
-  if (!info.update_available || !info.release_url) return;
   update.hidden = false;
-  update.textContent = `Update to v${info.latest_version}`;
-  update.title = "Open the latest Scout release installer";
-  update.addEventListener("click", () => window.open(info.release_url, "_blank", "noopener"), { once: true });
+  releaseUrl = info.update_available && info.release_url ? info.release_url : null;
+  update.textContent = releaseUrl ? `Update to v${info.latest_version}` : "Check for updates";
+  update.title = releaseUrl ? "Open the latest Scout release installer" : "Check for a newer Scout release";
+  update.onclick = async () => {
+    if (releaseUrl) {
+      window.open(releaseUrl, "_blank", "noopener");
+      return;
+    }
+    update.disabled = true;
+    update.textContent = "Checking…";
+    try {
+      renderAppInfo(await api.appInfo());
+      if (!releaseUrl) {
+        update.textContent = "Up to date";
+        window.setTimeout(() => renderAppInfo(info), 1800);
+      }
+    } catch {
+      update.textContent = "Check failed";
+      window.setTimeout(() => renderAppInfo(info), 1800);
+    } finally {
+      update.disabled = false;
+    }
+  };
 }
 
 // ── rail ────────────────────────────────────────────────────────────────────

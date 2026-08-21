@@ -24,7 +24,7 @@ iconutil -c icns "$ICONSET_DIR" -o "$ICON_FILE"
 # PyInstaller produces a self-contained .app. The local Codex proxy is a
 # separate console entrypoint, so explicitly bundle its executable beside the
 # Scout executable; the runtime looks for it next to sys.executable.
-PROXY_BIN="$(command -v openai-api-server-via-codex || true)"
+PROXY_BIN="$(uv run python -c 'import shutil; print(shutil.which("openai-api-server-via-codex") or "")')"
 if [[ -z "$PROXY_BIN" || ! -x "$PROXY_BIN" ]]; then
   echo "The Codex proxy executable is missing. Run 'uv sync' and rebuild Scout." >&2
   exit 1
