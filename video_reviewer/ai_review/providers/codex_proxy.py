@@ -177,6 +177,13 @@ class CodexProxyProvider(VisionProviderBase):
 
     def _generate(self, api_key: str, model: str, prompt: str, frames) -> dict:
         base_url, _ = _validated_base_url(codex_proxy_base_url())
+        # status() is what normally boots the local proxy, but not every caller
+        # checks status() first (chat, in particular, calls generate_json()
+        # directly) — so make sure it is actually up right before we use it,
+        # not just when someone happened to poll status first.
+        started = ensure_proxy_running(codex_proxy_base_url(), api_key)
+        if not started.available:
+            raise AiReviewError(started.message, ErrorCategory.PROVIDER_UNAVAILABLE)
         content = [{"type": "text", "text": prompt}]
         for frame in frames:
             encoded = base64.b64encode(frame.data).decode("ascii")
