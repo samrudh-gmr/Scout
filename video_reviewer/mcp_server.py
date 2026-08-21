@@ -23,7 +23,7 @@ from video_reviewer.manifest import (
     read_manifest_csv,
     write_manifest_csv,
 )
-from video_reviewer.sop import build_proposed_name
+from video_reviewer.workflow import resequence_and_rename
 
 mcp = FastMCP("video-renamer")
 
@@ -113,7 +113,16 @@ def review_video(row_index: int) -> list[dict]:
 
     for idx, frame_str in enumerate(frame_paths):
         frame_path = Path(frame_str)
-        if not frame_path.exists():
+        # Mirrors gui.py's _safe_artifact(): the manifest is a plain,
+        # locally-writable CSV, so a sample_frames cell isn't trustworthy on
+        # its own — require an image suffix, a real (non-symlink) file, same
+        # as the GUI's frame endpoint does for this same class of path.
+        if (
+            frame_path.suffix.lower() not in {".jpg", ".jpeg", ".png"}
+            or not frame_path.exists()
+            or not frame_path.is_file()
+            or frame_path.is_symlink()
+        ):
             result.append({"type": "text", "text": f"Frame {idx + 1}: file not found ({frame_path.name})"})
             continue
         image_data = base64.standard_b64encode(frame_path.read_bytes()).decode("ascii")
@@ -179,11 +188,19 @@ def approve_video(
             row.year_month = year_month.strip()
         row.review_status = REVIEW_APPROVED
 
-        try:
-            row.proposed_name = build_proposed_name(row)
-        except ValueError as exc:
+        # Without this, every row approved here keeps the "001" placeholder
+        # sequence assigned at prepare time (when every description was still
+        # blank), so two rows classified the same way collide on the same
+        # proposed filename until apply() rejects the whole batch. Resequencing
+        # can also renumber OTHER rows sharing this row's name group, so use
+        # the shared helper that keeps every affected row's proposed_name in
+        # sync, not just this one.
+        errors = resequence_and_rename(rows)
+        this_row_error = next((msg for msg in errors if msg.startswith(f"{source_name}:")), None)
+        if this_row_error is not None:
             row.review_status = REVIEW_BLOCKED
-            return f"Cannot approve {source_name}: {exc}"
+            write_manifest_csv(manifest, rows)
+            return f"Cannot approve: {this_row_error}"
 
         write_manifest_csv(manifest, rows)
     return (
