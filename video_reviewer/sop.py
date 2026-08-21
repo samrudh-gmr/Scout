@@ -81,13 +81,21 @@ def validate_optional_field(name: str, value: str) -> str:
 
 def build_proposed_name(row: ManifestRow) -> str:
     ext = Path(row.source_path).suffix
-    if row.industry and not row.part:
+    # Clean before testing truthiness: a whitespace-only part/industry must
+    # count as empty. Otherwise a whitespace-only part survives as a bare "_"
+    # segment (a malformed double underscore) instead of being omitted like a
+    # genuinely empty part, and a whitespace-only industry reaches
+    # INDUSTRY_CODES[""] below — a raw KeyError no caller catches, instead of
+    # being treated as "no industry" like a genuinely empty value is.
+    part = clean_field(row.part)
+    industry = clean_field(row.industry)
+    if industry and not part:
         raise ValueError("industry requires a part")
     return (
         f"{validate_year_month(row.year_month)}_"
-        + (f"{validate_optional_field('part', row.part)}_" if row.part else "")
+        + (f"{validate_optional_field('part', part)}_" if part else "")
         + f"{validate_field('description', row.description)}_"
-        + (f"{INDUSTRY_CODES[validate_industry(row.industry)]}_" if row.industry else "")
+        + (f"{INDUSTRY_CODES[validate_industry(industry)]}_" if industry else "")
         + f"{validate_field('client_or_location', row.client_or_location)}_"
         + f"{validate_sequence(row.sequence)}{ext}"
     )
