@@ -22,9 +22,8 @@ from video_reviewer.manifest import (
     read_manifest_csv,
     write_manifest_csv,
 )
-from video_reviewer.sop import build_proposed_name
 from video_reviewer.updates import check_latest_release
-from video_reviewer.workflow import assign_sequences_by_name
+from video_reviewer.workflow import resequence_and_rename
 
 logger = logging.getLogger("video_renamer")
 
@@ -237,15 +236,14 @@ def create_app(manifest_path: Path | None = None) -> FastAPI:
                 row.review_status = REVIEW_APPROVED
 
             # The suffix distinguishes otherwise-identical names; it must not
-            # reflect a clip's position in the imported folder.
-            assign_sequences_by_name(rows)
-            for i, row in enumerate(rows):
-                if i not in edited or not edited[i].get("checked"):
-                    continue
-                try:
-                    row.proposed_name = build_proposed_name(row)
-                except ValueError as exc:
-                    return JSONResponse({"error": f"Row {i} ({Path(row.source_path).name}): {exc}"}, status_code=422)
+            # reflect a clip's position in the imported folder. This can
+            # renumber any row sharing a name group with one just edited here,
+            # not only the rows in this save's payload, so every affected row's
+            # proposed_name has to be rebuilt too, or the manifest silently
+            # drifts from what apply() will actually produce.
+            errors = resequence_and_rename(rows)
+            if errors:
+                return JSONResponse({"error": "; ".join(errors)}, status_code=422)
             for source_name, old_desc, old_client, new_desc, new_client in corrections:
                 save_correction(
                     source_name=source_name,
@@ -264,7 +262,7 @@ def create_app(manifest_path: Path | None = None) -> FastAPI:
             return JSONResponse({"error": "A prepare job is already running. Wait for it to finish."}, status_code=409)
         try:
             input_dir = Path(body["input_dir"]).expanduser().resolve()
-            rows = await anyio.to_thread.run_sync(
+            result = await anyio.to_thread.run_sync(
                 lambda: build_prepare_manifest(
                     input_dir=input_dir,
                     year_month=body.get("year_month", ""),
@@ -275,17 +273,18 @@ def create_app(manifest_path: Path | None = None) -> FastAPI:
                     sample_count=int(body.get("sample_count", 0)),
                 )
             )
+            rows = result.rows
             if not rows:
-                return JSONResponse(
-                    {"error": "No supported video files were found. The existing batch was left unchanged."},
-                    status_code=422,
-                )
+                message = "No supported video files were found. The existing batch was left unchanged."
+                if result.skipped:
+                    message = "Every file failed to process: " + "; ".join(result.skipped)
+                return JSONResponse({"error": message}, status_code=422)
             with manifest_transaction(manifest_path):
                 write_manifest_csv(manifest_path, rows)
-            return JSONResponse({
-                "ok": True,
-                "message": f"Prepared {len(rows)} file(s). Manifest written to {manifest_path}.",
-            })
+            message = f"Prepared {len(rows)} file(s). Manifest written to {manifest_path}."
+            if result.skipped:
+                message += " Skipped (could not process): " + "; ".join(result.skipped)
+            return JSONResponse({"ok": True, "message": message})
         except Exception as exc:
             logger.exception("Prepare failed")
             return JSONResponse({"error": f"Prepare failed: {type(exc).__name__}. Check the folder and available disk space."}, status_code=500)
@@ -295,14 +294,27 @@ def create_app(manifest_path: Path | None = None) -> FastAPI:
     # ── /api/run-apply ──────────────────────────────────────────────────────
     @app.post("/api/run-apply")
     async def run_apply_route(body: dict) -> JSONResponse:
+        import anyio
         from video_reviewer.workflow import apply_manifest
-        output_dir = Path(body["output_dir"]).resolve() if body.get("output_dir") else None
-        dry_run = bool(body.get("dry_run", False))
-        result = apply_manifest(
-            manifest_path=manifest_path,
-            output_dir=output_dir,
-            dry_run=dry_run,
-        )
+        try:
+            output_dir = Path(body["output_dir"]).resolve() if body.get("output_dir") else None
+            dry_run = bool(body.get("dry_run", False))
+            # apply_manifest does blocking file I/O (copies, a FileLock with a
+            # 30s timeout) — run it off the event loop like the other mutating
+            # routes so it can't stall the whole server.
+            result = await anyio.to_thread.run_sync(
+                lambda: apply_manifest(
+                    manifest_path=manifest_path,
+                    output_dir=output_dir,
+                    dry_run=dry_run,
+                )
+            )
+        except Exception as exc:  # noqa: BLE001 - surface to the GUI like the sibling routes
+            logger.exception("Apply failed")
+            return JSONResponse(
+                {"error": f"Apply failed: {type(exc).__name__}. Check the output folder and permissions."},
+                status_code=500,
+            )
         lines = list(result.errors)
         for action in result.actions:
             if action["status"] in {"would_rename", "would_copy"}:
@@ -323,6 +335,9 @@ def create_app(manifest_path: Path | None = None) -> FastAPI:
 
         stored = load_api_key(provider)
         status = provider_status(provider, api_key=stored or None)
+        # Re-read: some providers (codex-proxy) persist a generated key as a
+        # side effect of status(), so the pre-call value can be stale here.
+        stored = load_api_key(provider) or stored
         return JSONResponse({
             "saved_key": bool(stored),
             "key_hint": api_key_hint(provider),

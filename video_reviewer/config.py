@@ -99,6 +99,13 @@ def _write_keys(keys: dict[str, str]) -> None:
         pass
     # Create with 0600 from the start so the key is never briefly world-readable.
     fd = os.open(_KEYS_FILE, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    # The mode above only applies when open() creates a new file — POSIX ignores
+    # it for a file that already existed (e.g. left world-readable by an older
+    # version). Force it every write so permissions can never stay loose.
+    try:
+        os.fchmod(fd, 0o600)
+    except OSError:
+        pass
     with os.fdopen(fd, "w", encoding="utf-8") as handle:
         json.dump(keys, handle, indent=2)
 

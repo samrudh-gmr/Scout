@@ -77,6 +77,12 @@ export function chatPanel({ onFields, onRemembered, onBatchFields }) {
     const text = input.value.trim();
     if (!text || busyNow) return;
     input.value = "";
+    // Snapshot which clip this request is actually for. If the operator
+    // switches clips before the reply comes back, resetFor() below moves
+    // `forIndex` and `messages` on to the new clip — comparing against the
+    // snapshot (not the live `forIndex`) is what lets a stale reply be
+    // dropped instead of landing on whatever clip is selected by then.
+    const askedFor = forIndex;
     messages.push({ role: "user", content: text });
     busyNow = true;
     sendButton.disabled = true;
@@ -85,7 +91,7 @@ export function chatPanel({ onFields, onRemembered, onBatchFields }) {
     try {
       const ask = (notes) =>
         api.aiChat({
-          index: forIndex,
+          index: askedFor,
           messages: messages.map(({ role, content }) => ({ role, content })),
           provider: state.provider,
           frame_notes: notes,
@@ -97,6 +103,12 @@ export function chatPanel({ onFields, onRemembered, onBatchFields }) {
         // on from the fresher notes. One retry only.
         reply = await ask("");
       }
+
+      // The operator moved on to another clip while this was in flight — its
+      // conversation was already reset, so applying this reply now would land
+      // on the wrong clip (fields) and/or the wrong conversation (log).
+      if (askedFor !== forIndex) return;
+
       if (reply.frame_notes) frameNotes = reply.frame_notes;
 
       const extras = [];
@@ -120,12 +132,14 @@ export function chatPanel({ onFields, onRemembered, onBatchFields }) {
       }
       messages.push({ role: "assistant", content: reply.message, extras });
     } catch (error) {
-      messages.push({ role: "assistant", content: error.message, extras: [] });
+      if (askedFor === forIndex) messages.push({ role: "assistant", content: error.message, extras: [] });
     } finally {
-      busyNow = false;
-      sendButton.disabled = false;
-      redraw();
-      input.focus();
+      if (askedFor === forIndex) {
+        busyNow = false;
+        sendButton.disabled = false;
+        redraw();
+        input.focus();
+      }
     }
   }
 

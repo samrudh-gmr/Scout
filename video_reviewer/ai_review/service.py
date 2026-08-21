@@ -23,6 +23,7 @@ from video_reviewer.ai_review.providers.codex_proxy import CodexProxyProvider
 from video_reviewer.manifest import manifest_transaction, REVIEW_APPROVED, REVIEW_BLOCKED, REVIEW_NEEDS_REVIEW, REVIEW_PENDING, read_manifest_csv, write_manifest_csv
 from video_reviewer.media import extract_sample_frames, create_frame_dir
 from video_reviewer.sop import build_proposed_name
+from video_reviewer.workflow import resequence_and_rename
 
 _PROVIDERS = {
     "gemini": GeminiProvider(),
@@ -128,7 +129,18 @@ def _review_one_row(manifest_path: Path, index: int, provider, config: ProviderC
                     ErrorCategory.VALIDATION,
                 )
             row = matching[0]
+            # _apply_response only returns normally once build_proposed_name has
+            # already succeeded once (a raise there sets BLOCKED and propagates
+            # as AiReviewError instead), so review_status here is always
+            # REVIEW_APPROVED or REVIEW_NEEDS_REVIEW — never BLOCKED.
             _apply_response(row, response, policy)
+            # _apply_response named this row alone, off whatever placeholder
+            # sequence it already had (always "001" fresh from prepare) — dedupe
+            # across the whole batch now that this row has real fields. This can
+            # renumber any OTHER row sharing this row's name group too, so use
+            # the shared helper that keeps every affected row's proposed_name in
+            # sync, not just this one.
+            resequence_and_rename(rows)
             write_manifest_csv(manifest_path, rows)
         error = ""
         category = ""
