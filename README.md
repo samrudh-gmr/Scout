@@ -46,7 +46,7 @@ For a user who should not need Python, `uv`, or Terminal, build Scout as a nativ
 open dist/Scout.app
 ```
 
-The resulting `Scout.app` opens the GUI in its own native window. The developer workflow above remains available, but an end user only needs to open the app. The first build requires the free `desktop` extra and PyInstaller; neither is needed by the end user. If macOS shows an unidentified-developer warning for an unsigned internal build, right-click the app and choose **Open** once.
+The resulting `Scout.app` opens the GUI in its own native window and uses the Scout paw print as its macOS icon. The build machine needs `uv` and Apple Xcode Command Line Tools (`xcode-select --install`); the script installs the free Python build dependencies automatically. Neither is needed by the end user. If macOS shows an unidentified-developer warning for an unsigned internal build, right-click the app and choose **Open** once.
 
 The packaged app keeps the same local state and Codex setup as the CLI. A user may complete the one-time `codex login`, then use Scout without running `uv sync` or any other Terminal command during normal operation.
 
