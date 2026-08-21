@@ -34,6 +34,8 @@ export const api = {
 
   appInfo: () => request("/app-info"),
 
+  updateDownload: () => request("/update/download", { method: "POST" }),
+
   save: (rows) => post("/save", { rows }),
 
   prepare: (body) => post("/run-prepare", body),

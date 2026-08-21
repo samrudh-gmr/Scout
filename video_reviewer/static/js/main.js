@@ -32,10 +32,20 @@ function renderAppInfo(info) {
   update.hidden = false;
   releaseUrl = info.update_available && info.release_url ? info.release_url : null;
   update.textContent = releaseUrl ? `Update to v${info.latest_version}` : "Check for updates";
-  update.title = releaseUrl ? "Open the latest Scout release installer" : "Check for a newer Scout release";
+  update.title = releaseUrl ? "Download and open the latest Scout installer" : "Check for a newer Scout release";
   update.onclick = async () => {
     if (releaseUrl) {
-      window.open(releaseUrl, "_blank", "noopener");
+      update.disabled = true;
+      update.textContent = "Downloading…";
+      try {
+        const result = await api.updateDownload();
+        update.textContent = `Opened v${result.version}`;
+        update.title = "The installer is open. Drag Scout into Applications and choose Replace.";
+      } catch (error) {
+        update.disabled = false;
+        update.textContent = "Update failed";
+        update.title = error.message;
+      }
       return;
     }
     update.disabled = true;

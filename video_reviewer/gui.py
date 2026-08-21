@@ -22,7 +22,7 @@ from video_reviewer.manifest import (
     read_manifest_csv,
     write_manifest_csv,
 )
-from video_reviewer.updates import check_latest_release
+from video_reviewer.updates import check_latest_release, download_and_open_update
 from video_reviewer.workflow import resequence_and_rename
 
 logger = logging.getLogger("video_renamer")
@@ -128,6 +128,16 @@ def create_app(manifest_path: Path | None = None) -> FastAPI:
     async def api_app_info() -> JSONResponse:
         """Return local version and best-effort GitHub Release update status."""
         return JSONResponse(check_latest_release())
+
+    @app.post("/api/update/download")
+    async def api_update_download() -> JSONResponse:
+        """Download and open the latest macOS installer from the app itself."""
+        import anyio
+        try:
+            result = await anyio.to_thread.run_sync(download_and_open_update)
+        except (OSError, RuntimeError, TimeoutError) as exc:
+            return JSONResponse({"error": str(exc)}, status_code=409)
+        return JSONResponse(result)
 
 
     # ── /api/browse-dir: cross-platform in-app fallback ─────────────────────
