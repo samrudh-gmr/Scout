@@ -1,5 +1,6 @@
 tmp/**
 videos/**
+test_videos/**
 renamed/**
 .claude/**
 __pycache__/
@@ -7,3 +8,6 @@ CLAUDE.md
 session.md
 manifest.csv
 video_renamer.egg-info/
+scout.egg-info/
+build/
+dist/

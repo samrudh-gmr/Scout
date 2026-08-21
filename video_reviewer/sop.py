@@ -6,8 +6,24 @@ from pathlib import Path
 from video_reviewer.manifest import REVIEW_APPLIED, REVIEW_APPROVED, ManifestRow
 
 
-VIDEO_EXTENSIONS = {".mov", ".mp4", ".m4v", ".avi", ".mkv", ".mts", ".mxf"}
+VIDEO_EXTENSIONS = {".mov", ".mp4", ".m4v", ".avi", ".mkv", ".mts", ".mxf", ".webm"}
 INVALID_FILENAME_CHARS = set('/\\:*?"<>|')
+INDUSTRY_CATEGORIES = (
+    "Specialty Vehicle",
+    "Marine & Boat Building",
+    "General Manufacturing",
+    "Consumer and Recreation",
+    "Architecture",
+    "Aerospace & Defense",
+)
+INDUSTRY_CODES = {
+    "Specialty Vehicle": "SV",
+    "Marine & Boat Building": "MARINE",
+    "General Manufacturing": "GM",
+    "Consumer and Recreation": "CR",
+    "Architecture": "ARCH",
+    "Aerospace & Defense": "AERO",
+}
 
 
 def natural_sort_key(value: str) -> list[object]:
@@ -47,13 +63,33 @@ def validate_sequence(value: str) -> str:
     return f"{int(value):03d}"
 
 
+def validate_industry(value: str) -> str:
+    value = clean_field(value)
+    if not value:
+        return ""
+    if value not in INDUSTRY_CATEGORIES:
+        raise ValueError(f"industry must be one of: {', '.join(INDUSTRY_CATEGORIES)}")
+    return value
+
+
+def validate_optional_field(name: str, value: str) -> str:
+    value = clean_field(value)
+    if not value:
+        return ""
+    return validate_field(name, value)
+
+
 def build_proposed_name(row: ManifestRow) -> str:
     ext = Path(row.source_path).suffix
+    if row.industry and not row.part:
+        raise ValueError("industry requires a part")
     return (
         f"{validate_year_month(row.year_month)}_"
-        f"{validate_field('description', row.description)}_"
-        f"{validate_field('client_or_location', row.client_or_location)}_"
-        f"{validate_sequence(row.sequence)}{ext}"
+        + (f"{validate_optional_field('part', row.part)}_" if row.part else "")
+        + f"{validate_field('description', row.description)}_"
+        + (f"{INDUSTRY_CODES[validate_industry(row.industry)]}_" if row.industry else "")
+        + f"{validate_field('client_or_location', row.client_or_location)}_"
+        + f"{validate_sequence(row.sequence)}{ext}"
     )
 
 

@@ -1,7 +1,7 @@
 [project]
-name = "video-renamer"
+name = "scout"
 version = "0.2.0"
-description = "AI-assisted batch video reviewer and renamer for the GMR SOP (Claude MCP edition)."
+description = "AI-assisted batch video reviewer and renamer for the GMR SOP."
 requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.110",
@@ -9,17 +9,29 @@ dependencies = [
     "python-multipart>=0.0.9",
     "mcp>=1.0",
     "static-ffmpeg>=2.1",
+    "google-genai>=1.0",
+    "openai>=1.0",
+    "anthropic>=0.40",
+    "filelock>=3.0",
+    "openai-api-server-via-codex>=0.2.0",
 ]
 
 [project.scripts]
+scout = "video_reviewer.cli:main"
+scout-desktop = "video_reviewer.desktop:main"
 video-renamer = "video_reviewer.cli:main"
+
+[project.optional-dependencies]
+desktop = ["pywebview>=5.4"]
 
 [build-system]
 requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
-[tool.setuptools]
-packages = ["video_reviewer"]
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["video_reviewer*"]
+namespaces = false
 
 [tool.setuptools.package-data]
 video_reviewer = ["static/*", "static/**/*"]

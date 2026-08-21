@@ -15,6 +15,7 @@ from pathlib import Path
 from mcp.server.fastmcp import FastMCP
 
 from video_reviewer.manifest import (
+    manifest_transaction,
     REVIEW_APPROVED,
     REVIEW_BLOCKED,
     REVIEW_PENDING,
@@ -89,7 +90,9 @@ def review_video(row_index: int) -> list[dict]:
         "sequence": row.sequence,
         "capture_time": row.capture_time,
         "current_status": row.review_status,
+        "current_part": row.part or None,
         "current_description": row.description or None,
+        "current_industry": row.industry or None,
         "current_client_or_location": row.client_or_location or None,
     }
     try:
@@ -126,9 +129,11 @@ def review_video(row_index: int) -> list[dict]:
         "type": "text",
         "text": (
             "\nPlease analyze these frames and provide:\n"
-            "1. **description**: Action + Object phrase (e.g., 'Sanding Automotive Body Panel')\n"
-            "2. **client_or_location**: Client company or site name\n"
-            "3. Whether this is a manual process (human operator visible)\n\n"
+            "1. **part**: Specific recognizable industrial part, or empty if none\n"
+            "2. **description**: If part is present, provide only the process/action (e.g., 'Sanding'); otherwise use the established Action + Object phrase (e.g., 'Sanding Automotive Body Panel')\n"
+            "3. **industry**: One approved industry category only when part is present; otherwise empty\n"
+            "4. **client_or_location**: Client company or site name\n"
+            "5. Whether this is a manual process (human operator visible)\n\n"
             "Then call `approve_video` with your classification."
         ),
     })
@@ -141,42 +146,51 @@ def approve_video(
     description: str,
     client_or_location: str,
     year_month: str = "",
+    industry: str = "",
+    part: str = "",
 ) -> str:
     """Approve a video with the given classification and mark it as approved.
 
     Args:
         row_index: The index of the video row in the manifest.
-        description: The Action + Object description (e.g., 'Sanding Automotive Body Panel').
+        part: Optional specific recognizable part, or empty when no distinct part can be identified.
+        description: Process/action when part is present (e.g., 'Sanding'); otherwise the established Action + Object description.
         client_or_location: The client company or site name.
         year_month: Optional YYYY-MM override. If empty, uses the existing value.
 
     Returns a confirmation message with the proposed filename.
     """
     manifest = _get_manifest_path()
-    rows = read_manifest_csv(manifest)
-    if row_index < 0 or row_index >= len(rows):
-        return f"Invalid row index: {row_index}"
+    with manifest_transaction(manifest):
+        rows = read_manifest_csv(manifest)
+        if row_index < 0 or row_index >= len(rows):
+            return f"Invalid row index: {row_index}"
 
-    row = rows[row_index]
-    source_name = Path(row.source_path).name
+        row = rows[row_index]
+        source_name = Path(row.source_path).name
 
-    row.description = description.strip()
-    row.client_or_location = client_or_location.strip()
-    if year_month:
-        row.year_month = year_month.strip()
-    row.review_status = REVIEW_APPROVED
+        row.description = description.strip()
+        row.part = part.strip()
+        row.industry = industry.strip()
+        if not row.part:
+            row.industry = ""
+        row.client_or_location = client_or_location.strip()
+        if year_month:
+            row.year_month = year_month.strip()
+        row.review_status = REVIEW_APPROVED
 
-    try:
-        row.proposed_name = build_proposed_name(row)
-    except ValueError as exc:
-        row.review_status = REVIEW_BLOCKED
-        return f"Cannot approve {source_name}: {exc}"
+        try:
+            row.proposed_name = build_proposed_name(row)
+        except ValueError as exc:
+            row.review_status = REVIEW_BLOCKED
+            return f"Cannot approve {source_name}: {exc}"
 
-    write_manifest_csv(manifest, rows)
+        write_manifest_csv(manifest, rows)
     return (
         f"Approved: {source_name}\n"
         f"Proposed name: {row.proposed_name}\n"
         f"Description: {row.description}\n"
+        f"Industry: {row.industry or 'none'}\n"
         f"Client/Location: {row.client_or_location}\n"
         f"Year-Month: {row.year_month}"
     )

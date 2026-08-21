@@ -1,0 +1,1 @@
+"""Built frontend assets."""
