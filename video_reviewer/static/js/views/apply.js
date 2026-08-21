@@ -25,8 +25,44 @@ export async function applyView({ view, dock }) {
     remember("outputDir", path);
   };
 
-  const c = counts();
-  const ready = state.rows.filter((row) => ["approved", "applied"].includes(row.review_status));
+  const planHeading = el("h2");
+  const planBody = el("div");
+  const dockTally = el("span.tally");
+  const dryButton = el("button.btn.ghost", { onclick: () => run(dryButton, true) }, "Check the plan");
+  const applyButton = el("button.btn.go", { onclick: () => run(applyButton, false) }, "Rename files");
+
+  // A successful apply/dry-run changes review_status (and therefore what's
+  // "ready") without leaving this view, so the plan, heading, tally, and
+  // buttons all need to be recomputed from the refreshed state afterward —
+  // not just once at mount — or the operator keeps looking at a stale plan
+  // for files that were just renamed.
+  function refresh() {
+    const c = counts();
+    const ready = state.rows.filter((row) => ["approved", "applied"].includes(row.review_status));
+
+    clear(planHeading).append(`Ready to rename — ${ready.length} of ${c.total}`);
+    clear(planBody).append(
+      el("p", null, ready.length ? "Approved in Review." : "Approve clips in Review before applying."),
+      ready.length
+        ? el(
+            "div.plan",
+            null,
+            ready.map((row) =>
+              el(
+                "div.r",
+                null,
+                el("span.from", { title: row.source_name }, row.source_name),
+                el("span.arrow", null, "→"),
+                el("span.to", null, row.proposed_name),
+              ),
+            ),
+          )
+        : null,
+    );
+    clear(dockTally).append(`${ready.length} approved · ${c.applied} already renamed`);
+    dryButton.disabled = !ready.length;
+    applyButton.disabled = !ready.length;
+  }
 
   async function run(button, dryRun) {
     clear(messages);
@@ -35,6 +71,7 @@ export async function applyView({ view, dock }) {
         api.apply({ output_dir: outputDir.value.trim() || null, dry_run: dryRun }),
       );
       await loadRows();
+      refresh();
       clear(output).append(el("pre.log-out", null, result.output || "Nothing to report."));
       messages.append(
         result.ok
@@ -79,40 +116,19 @@ export async function applyView({ view, dock }) {
         ),
       ),
 
-      el(
-        "section.panel",
-        null,
-        el("h2", null, `Ready to rename — ${ready.length} of ${c.total}`),
-        el("p", null, ready.length ? "Approved in Review." : "Approve clips in Review before applying."),
-        ready.length
-          ? el(
-              "div.plan",
-              null,
-              ready.map((row) =>
-                el(
-                  "div.r",
-                  null,
-                  el("span.from", { title: row.source_name }, row.source_name),
-                  el("span.arrow", null, "→"),
-                  el("span.to", null, row.proposed_name),
-                ),
-              ),
-            )
-          : null,
-      ),
+      el("section.panel", null, planHeading, planBody),
 
       output,
     ),
   );
 
-  const dryButton = el("button.btn.ghost", { onclick: () => run(dryButton, true), disabled: !ready.length }, "Check the plan");
-  const applyButton = el("button.btn.go", { onclick: () => run(applyButton, false), disabled: !ready.length }, "Rename files");
-
   dock.append(
     el("a.btn.ghost", { href: "#/review" }, "← Review"),
-    el("span.tally", null, `${ready.length} approved · ${c.applied} already renamed`),
+    dockTally,
     el("span.spacer"),
     dryButton,
     applyButton,
   );
+
+  refresh();
 }
