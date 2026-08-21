@@ -21,10 +21,10 @@ rm -rf "$ICONSET_DIR"
 uv run --with Pillow python scripts/create_macos_icon.py "$ICONSET_DIR"
 iconutil -c icns "$ICONSET_DIR" -o "$ICON_FILE"
 
-# PyInstaller produces a self-contained .app. The local Codex proxy is a
-# separate console entrypoint, so explicitly bundle its executable beside the
-# Scout executable; the runtime looks for it next to sys.executable.
-PROXY_BIN="$(uv run python -c 'import shutil; print(shutil.which("openai-api-server-via-codex") or "")')"
+# PyInstaller produces a self-contained .app. The local Codex proxy package's
+# console entrypoint is only a Python launcher; bundle the real Go binary that
+# the launcher points to, beside the Scout executable.
+PROXY_BIN="$(uv run python -c 'from openai_api_server_via_codex.launcher import bundled_binary; print(bundled_binary())')"
 if [[ -z "$PROXY_BIN" || ! -x "$PROXY_BIN" ]]; then
   echo "The Codex proxy executable is missing. Run 'uv sync' and rebuild Scout." >&2
   exit 1

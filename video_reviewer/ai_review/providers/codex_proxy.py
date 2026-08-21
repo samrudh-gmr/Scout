@@ -63,10 +63,18 @@ def proxy_is_healthy(base_url: str, api_key: str) -> bool:
 
 
 def _proxy_executable() -> str | None:
-    bundled = Path(sys.executable).with_name("openai-api-server-via-codex")
-    if bundled.is_file() and bundled.exists():
-        return str(bundled)
-    return shutil.which("openai-api-server-via-codex")
+    name = "openai-api-server-via-codex"
+    executable = Path(sys.executable)
+    candidates = [
+        executable.with_name(name),
+        Path(getattr(sys, "_MEIPASS", "")) / name,
+        executable.parent / "_internal" / name,
+        executable.parent.parent / "Frameworks" / name,
+    ]
+    for bundled in candidates:
+        if bundled.is_file() and bundled.exists():
+            return str(bundled)
+    return shutil.which(name)
 
 
 def _stored_or_generated_key() -> str:
