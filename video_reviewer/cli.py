@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import subprocess
 from pathlib import Path
 
 from video_reviewer.manifest import REVIEW_PENDING, write_manifest_csv
@@ -12,7 +13,7 @@ def default_manifest_path() -> Path:
 
 
 def command_prepare(args: argparse.Namespace) -> int:
-    rows = build_prepare_manifest(
+    result = build_prepare_manifest(
         input_dir=Path(args.input).resolve(),
         year_month=args.year_month,
         client_or_location=args.client,
@@ -23,11 +24,14 @@ def command_prepare(args: argparse.Namespace) -> int:
         ai_frame_max_width=args.ai_frame_max_width,
         ai_frame_quality=args.ai_frame_quality,
     )
+    rows = result.rows
     manifest_path = Path(args.manifest).resolve()
     write_manifest_csv(manifest_path, rows)
     print(f"Wrote manifest: {manifest_path}")
     print(f"Files prepared: {len(rows)}")
     print(f"Rows pending review: {sum(1 for row in rows if row.review_status == REVIEW_PENDING)}")
+    for message in result.skipped:
+        print(f"Skipped (could not process): {message}")
     return 0
 
 
@@ -198,6 +202,12 @@ def main(argv: list[str] | None = None) -> int:
         return args.func(args)
     except RuntimeError as exc:
         print(str(exc))
+        return 1
+    except (OSError, subprocess.CalledProcessError) as exc:
+        # A missing manifest/input folder or a failed ffmpeg/ffprobe call should
+        # print a clean one-line error, like every other expected failure here,
+        # not dump a raw Python traceback.
+        print(f"{type(exc).__name__}: {exc}")
         return 1
 
 
