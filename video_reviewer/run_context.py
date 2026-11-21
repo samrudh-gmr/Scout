@@ -63,3 +63,8 @@ def match_part_choice(part: str, choices: list[str]) -> str | None:
         return None
     return next((choice for choice in choices if _key(choice) == wanted), None)
 
+
+def names_a_choice(text: str, choices: list[str]) -> bool:
+    """Whether free text mentions any of the choices as whole words."""
+    haystack = f" {_key(text)} "
+    return any(f" {_key(choice)} " in haystack for choice in choices)

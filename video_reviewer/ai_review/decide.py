@@ -9,7 +9,7 @@ import re
 from dataclasses import dataclass, field
 
 from video_reviewer.ai_review.models import ReviewPolicy, ReviewResponse
-from video_reviewer.run_context import match_part_choice
+from video_reviewer.run_context import match_part_choice, names_a_choice
 
 SCENE_ROBOT = "robot_process"
 SCENE_MANUAL = "manual_process"
@@ -19,10 +19,11 @@ SCENES = (SCENE_ROBOT, SCENE_MANUAL, SCENE_OPERATORS)
 FLAG_PART_DROPPED = "part_dropped_for_operators"
 FLAG_PART_NOT_IN_CHOICES = "part_not_in_choices"
 FLAG_PART_NOT_IDENTIFIED = "part_not_identified"
+FLAG_PART_ON_OPERATOR_CLIP = "part_named_on_operator_clip"
 
 _SERIOUS_FLAGS = {
     "client_unknown", "unknown_client", "unsafe", "invalid",
-    FLAG_PART_DROPPED, FLAG_PART_NOT_IN_CHOICES, FLAG_PART_NOT_IDENTIFIED,
+    FLAG_PART_DROPPED, FLAG_PART_NOT_IN_CHOICES, FLAG_PART_NOT_IDENTIFIED, FLAG_PART_ON_OPERATOR_CLIP,
 }
 # Models invent their own flag names ("part_uncertain", "ambiguous_part_type",
 # "uncertain_part_industry"). Any flag saying it is unsure what the part or its
@@ -86,6 +87,11 @@ def decide(
         # itself, so a person confirms the clip.
         if part or industry:
             flags.append(FLAG_PART_DROPPED)
+        # The part must not ride along inside the description either
+        # ("Operators Loading Truck Hood"). Code can only spot names it knows.
+        known = choices + ([part] if part else [])
+        if names_a_choice(description, known):
+            flags.append(FLAG_PART_ON_OPERATOR_CLIP)
         part = ""
         industry = ""
     elif (response.is_manual or scene == SCENE_MANUAL) and not description.lower().startswith("manual"):

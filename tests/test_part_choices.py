@@ -181,6 +181,9 @@ def test_prompt_has_no_part_choice_section_without_choices() -> None:
     assert "Part choices for this batch" not in _prompt({"part_choices": []})
 
 
+def test_prompt_tells_operator_clips_not_to_name_the_part() -> None:
+    assert "Operators Loading Part" in _prompt({})
+
 
 # ── decision ─────────────────────────────────────────────────────────────────
 
@@ -251,6 +254,14 @@ def test_unrelated_flags_do_not_block_approval(monkeypatch, tmp_path: Path, flag
     )
     assert result.status == REVIEW_APPROVED
 
+
+def test_operator_description_that_names_a_part_goes_to_review(monkeypatch, tmp_path: Path) -> None:
+    result, row = _review(
+        monkeypatch, tmp_path,
+        {**BASE, "scene": "operators", "part": "", "industry": "", "description": "Operators Loading Truck Hood"},
+    )
+    assert result.status == REVIEW_NEEDS_REVIEW
+    assert "part_named_on_operator_clip" in row.ai_flags
 
 
 def test_decide_takes_part_choices_directly() -> None:
