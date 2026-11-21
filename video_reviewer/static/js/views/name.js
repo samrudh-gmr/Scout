@@ -3,7 +3,7 @@
 
 import { api } from "../api.js";
 import { el, clear, busy, pill, note } from "../dom.js";
-import { state, remember, loadRows, counts } from "../store.js";
+import { state, remember, loadRows, counts, chosenModel, rememberModel } from "../store.js";
 
 const FRAMES_PER_PRESET = { fast: 6, balanced: 12, accurate: 16 };
 
@@ -26,8 +26,10 @@ export async function nameView({ view, dock }) {
   );
   presetSelect.value = state.preset;
 
-  const modelOptions = el("datalist", { id: "modelOptions" });
-  const modelInput = el("input", { type: "text", id: "model", list: "modelOptions", placeholder: "provider default" });
+  const modelSelect = el("select", {
+    id: "model",
+    onchange: (event) => rememberModel(state.provider, event.target.value),
+  });
 
   const runButton = el("button.btn.primary", { onclick: () => run() }, "Name every clip");
 
@@ -116,12 +118,17 @@ export async function nameView({ view, dock }) {
       providerSelect.append(el("option", { value: provider.id }, provider.display_name));
     }
     providerSelect.value = status.provider;
-    modelInput.placeholder = status.default_model || "provider default";
-    clear(modelOptions);
-    const models = status.models || [];
-    for (const model of models.length ? models : [status.default_model, status.cheap_model, status.accurate_model]) {
-      if (model) modelOptions.append(el("option", { value: model }));
-    }
+    // The first entry is always "whatever the provider defaults to", so a
+    // retired model id never gets stuck in someone's browser.
+    clear(modelSelect);
+    modelSelect.append(
+      el("option", { value: "" }, status.default_model ? `Default — ${status.default_model}` : "Provider default"),
+    );
+    const models = (status.models || []).filter((model) => model && model !== status.default_model);
+    for (const model of models) modelSelect.append(el("option", { value: model }, model));
+    const remembered = chosenModel(state.provider);
+    if (remembered && !models.includes(remembered)) rememberModel(state.provider, "");
+    modelSelect.value = models.includes(remembered) ? remembered : "";
 
     renderKeySlot();
     refreshEstimate();
@@ -186,7 +193,7 @@ export async function nameView({ view, dock }) {
         const response = await api.aiReview({
           indices: [index],
           provider: state.provider,
-          model: modelInput.value.trim(),
+          model: modelSelect.value,
           api_key: typedKey,
           preset: presetSelect.value,
         });
@@ -315,7 +322,7 @@ export async function nameView({ view, dock }) {
           "div",
           { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: "14px" } },
           el("div.field", null, el("label", { for: "preset" }, "Detail"), presetSelect),
-          el("div.field", null, el("label", { for: "model" }, "Model"), modelInput, modelOptions),
+          el("div.field", null, el("label", { for: "model" }, "Model"), modelSelect),
         ),
         estimate,
       ),

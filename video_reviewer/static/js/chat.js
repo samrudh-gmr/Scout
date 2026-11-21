@@ -6,7 +6,7 @@
 
 import { api } from "./api.js";
 import { el, clear, add } from "./dom.js";
-import { state, edit } from "./store.js";
+import { state, edit, chosenModel } from "./store.js";
 
 const OPENERS = [
   "What is happening in this clip?",
@@ -94,6 +94,7 @@ export function chatPanel({ onFields, onRemembered, onBatchFields }) {
           index: askedFor,
           messages: messages.map(({ role, content }) => ({ role, content })),
           provider: state.provider,
+          model: chosenModel(state.provider),
           frame_notes: notes,
         });
 

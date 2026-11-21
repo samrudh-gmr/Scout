@@ -29,6 +29,15 @@ export function remember(key, value) {
   localStorage.setItem(key, value);
 }
 
+// The model is remembered per provider: a Gemini id means nothing to OpenAI.
+// An empty string means "use the provider's default".
+export const chosenModel = (provider = state.provider) => localStorage.getItem(`model.${provider}`) || "";
+
+export function rememberModel(provider, model) {
+  if (model) localStorage.setItem(`model.${provider}`, model);
+  else localStorage.removeItem(`model.${provider}`);
+}
+
 export async function loadRows() {
   const data = await api.rows();
   state.rows = data.rows || [];
