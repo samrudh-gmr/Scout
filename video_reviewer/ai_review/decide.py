@@ -24,6 +24,11 @@ _SERIOUS_FLAGS = {
     "client_unknown", "unknown_client", "unsafe", "invalid",
     FLAG_PART_DROPPED, FLAG_PART_NOT_IN_CHOICES, FLAG_PART_NOT_IDENTIFIED,
 }
+# Models invent their own flag names ("part_uncertain", "ambiguous_part_type",
+# "uncertain_part_industry"). Any flag saying it is unsure what the part or its
+# industry is means the filename may be wrong, so a person looks.
+_DOUBT = re.compile(r"uncertain|ambiguous|unclear|unsure|unknown")
+_ABOUT_THE_PART = re.compile(r"part|industry|vertical")
 _OPERATOR_DESCRIPTION = re.compile(r"^\s*operators?\b", re.IGNORECASE)
 
 
@@ -52,6 +57,11 @@ def is_operator_clip(scene: str, description: str) -> bool:
     callers that never send a scene.
     """
     return normalize_scene(scene) == SCENE_OPERATORS or bool(_OPERATOR_DESCRIPTION.match(description or ""))
+
+
+def doubts_the_part(flag: str) -> bool:
+    text = flag.lower()
+    return bool(_DOUBT.search(text) and _ABOUT_THE_PART.search(text))
 
 
 def decide(
@@ -106,7 +116,7 @@ def decide(
     auto_approve = (
         confidence >= policy.confidence_threshold
         and not (unknown_client and not policy.allow_unknown_client)
-        and not any(flag.lower() in _SERIOUS_FLAGS for flag in flags)
+        and not any(flag.lower() in _SERIOUS_FLAGS or doubts_the_part(flag) for flag in flags)
     )
     return Decision(
         description=description,

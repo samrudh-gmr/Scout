@@ -234,6 +234,22 @@ def test_without_choices_any_part_is_still_accepted(monkeypatch, tmp_path: Path)
     assert row.ai_flags == ""
 
 
+@pytest.mark.parametrize("flag", ["part_uncertain", "uncertain_part_industry", "ambiguous_part_type", "industry_uncertain", "part_subtype_unclear"])
+def test_model_unsure_about_the_part_goes_to_review(monkeypatch, tmp_path: Path, flag: str) -> None:
+    result, _ = _review(
+        monkeypatch, tmp_path,
+        {**BASE, "scene": "robot_process", "part": "Truck Hood", "industry": "Specialty Vehicle", "description": "Sanding", "flags": [flag]},
+    )
+    assert result.status == REVIEW_NEEDS_REVIEW
+
+
+@pytest.mark.parametrize("flag", ["videographer_visible", "bright_glare", "distant_view"])
+def test_unrelated_flags_do_not_block_approval(monkeypatch, tmp_path: Path, flag: str) -> None:
+    result, _ = _review(
+        monkeypatch, tmp_path,
+        {**BASE, "scene": "robot_process", "part": "Truck Hood", "industry": "Specialty Vehicle", "description": "Sanding", "flags": [flag]},
+    )
+    assert result.status == REVIEW_APPROVED
 
 
 
