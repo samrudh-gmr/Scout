@@ -14,6 +14,7 @@ from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
 
+from video_reviewer.ai_review.decide import is_operator_clip
 from video_reviewer.manifest import (
     manifest_transaction,
     REVIEW_APPROVED,
@@ -162,7 +163,7 @@ def approve_video(
 
     Args:
         row_index: The index of the video row in the manifest.
-        part: Optional specific recognizable part, or empty when no distinct part can be identified.
+        part: Optional specific recognizable part, or empty when no distinct part can be identified. Ignored for operator clips (description starting with 'Operators').
         description: Process/action when part is present (e.g., 'Sanding'); otherwise the established Action + Object description.
         client_or_location: The client company or site name.
         year_month: Optional YYYY-MM override. If empty, uses the existing value.
@@ -181,6 +182,9 @@ def approve_video(
         row.description = description.strip()
         row.part = part.strip()
         row.industry = industry.strip()
+        # Same rule as the built-in review: operator footage carries no part.
+        if is_operator_clip("", row.description):
+            row.part = ""
         if not row.part:
             row.industry = ""
         row.client_or_location = client_or_location.strip()

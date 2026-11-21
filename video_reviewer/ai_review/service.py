@@ -5,6 +5,7 @@ import json
 from dataclasses import asdict
 from pathlib import Path
 
+from video_reviewer.ai_review.decide import decide
 from video_reviewer.ai_review.models import (
     AiReviewError,
     ErrorCategory,
@@ -261,37 +262,21 @@ def _optional_int(value) -> int | None:
 def _apply_response(row, response: ReviewResponse, policy: ReviewPolicy) -> None:
     if not response.description or not response.client_or_location:
         raise AiReviewError("AI response was missing description or client/location.", ErrorCategory.MALFORMED_RESPONSE)
-    description = response.description.strip()
-    # The SOP prefixes manual work with "Manual". The providers report it as a
-    # flag, so apply it here rather than trusting each model to remember.
-    if response.is_manual and not description.lower().startswith("manual"):
-        description = f"Manual {description}"
-    row.description = description
-    row.part = response.part.strip()
-    row.industry = response.industry.strip()
-    if not row.part:
-        row.industry = ""
-    # A client chosen on Prepare is authoritative batch metadata. The model can
-    # still identify the activity, but may not replace an operator override.
     batch_client_override = str(_parse_hints(row.source_hints).get("batch_client_override", "")).strip()
-    row.client_or_location = batch_client_override or response.client_or_location.strip()
-    confidence = max(0.0, min(1.0, float(response.confidence)))
-    row.ai_confidence = f"{confidence:.2f}"
+    decision = decide(response, batch_client_override=batch_client_override, policy=policy)
+    row.description = decision.description
+    row.part = decision.part
+    row.industry = decision.industry
+    row.client_or_location = decision.client_or_location
+    row.ai_confidence = f"{decision.confidence:.2f}"
     row.ai_rationale = response.rationale.strip()
-    row.ai_flags = "; ".join(response.flags)
+    row.ai_flags = "; ".join(decision.flags)
     try:
         row.proposed_name = build_proposed_name(row)
     except ValueError as exc:
         row.review_status = REVIEW_BLOCKED
         raise AiReviewError(str(exc), ErrorCategory.VALIDATION) from exc
-    serious_flags = {flag.lower() for flag in response.flags}
-    unknown_client = row.client_or_location.strip().lower() == "unknown"
-    can_auto_approve = (
-        confidence >= policy.confidence_threshold
-        and not (unknown_client and not policy.allow_unknown_client)
-        and not any(flag in serious_flags for flag in {"client_unknown", "unknown_client", "unsafe", "invalid"})
-    )
-    row.review_status = REVIEW_APPROVED if can_auto_approve else REVIEW_NEEDS_REVIEW
+    row.review_status = REVIEW_APPROVED if decision.auto_approve else REVIEW_NEEDS_REVIEW
 
 
 def _merge_flags(existing: str, flag: str) -> str:

@@ -101,6 +101,8 @@ class ReviewResponse:
     rationale: str = ""
     flags: list[str] = field(default_factory=list)
     raw_text: str = ""
+    # robot_process, manual_process, operators, or "" when the model gave none.
+    scene: str = ""
 
 
 @dataclass

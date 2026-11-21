@@ -12,6 +12,11 @@ Metadata / source hints:
 {context}
 
 Determine, from the frames and hints:
+- scene: what the clip is about. Exactly one of:
+  "robot_process" — a robot or automated cell working a part;
+  "manual_process" — a person doing the process by hand;
+  "operators" — the clip is about people (controlling, supervising, inspecting or standing by a robot), not about a part being worked.
+  When scene is "operators", part and industry MUST be empty strings even if a part is visible, and description is e.g. "Operators Controlling Robot" or "Operators Inspecting Robot".
 - part: the specific recognizable industrial part, such as "Aluminum Wheel", "Aircraft Bracket", or "Boat Propeller". Use an empty string if no distinct part can be identified.
 - description: when part is non-empty, provide only the concise process/action in Title Case, e.g. "Sanding" or "Surface Finishing". When part is empty, keep the established "Action + Object" description behavior, e.g. "Sanding Automotive Body Panel". Do not force a generic description such as "Surface Finishing Test" when the footage supports a useful object description.
 - industry: if and only if part is non-empty, choose exactly one of: "Specialty Vehicle", "Marine & Boat Building", "General Manufacturing", "Consumer and Recreation", "Architecture", "Aerospace & Defense". If part is empty, use an empty string.
@@ -23,7 +28,7 @@ Determine, from the frames and hints:
 
 Hard constraints: part and industry (when non-empty), description, and client_or_location MUST NOT contain underscores or any of these characters: / \\ : * ? " < > |. Description and client_or_location may not be empty. Industry must be empty or one of the six exact categories above.
 
-Respond with ONLY a JSON object with exactly these keys: part, description, industry, client_or_location, is_manual, confidence, rationale, flags."""
+Respond with ONLY a JSON object with exactly these keys: scene, part, description, industry, client_or_location, is_manual, confidence, rationale, flags."""
 
 
 def prompt_for(request: ReviewRequest) -> str:
