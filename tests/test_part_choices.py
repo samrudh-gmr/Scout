@@ -311,3 +311,12 @@ def test_mcp_approval_inside_the_choices_is_approved(monkeypatch, tmp_path: Path
     row = read_manifest_csv(manifest)[0]
     assert row.review_status == REVIEW_APPROVED
     assert row.part == "Truck Hood"
+
+
+def test_a_flag_the_model_and_the_code_both_raise_is_recorded_once(monkeypatch, tmp_path: Path) -> None:
+    _, row = _review(
+        monkeypatch, tmp_path,
+        {**BASE, "scene": "robot_process", "part": "", "industry": "", "description": "Sanding Vehicle Body Panel",
+         "flags": ["part_not_identified", "Part_Not_Identified "]},
+    )
+    assert row.ai_flags == "part_not_identified"

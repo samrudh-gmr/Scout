@@ -60,6 +60,18 @@ def is_operator_clip(scene: str, description: str) -> bool:
     return normalize_scene(scene) == SCENE_OPERATORS or bool(_OPERATOR_DESCRIPTION.match(description or ""))
 
 
+def _unique(flags: list[str]) -> list[str]:
+    """Flags in first-seen order, once each. The model and the code can raise the same one."""
+    seen: set[str] = set()
+    kept: list[str] = []
+    for flag in flags:
+        text = str(flag).strip()
+        if text and text.lower() not in seen:
+            seen.add(text.lower())
+            kept.append(text.lower() if text.lower() in _SERIOUS_FLAGS else text)
+    return kept
+
+
 def doubts_the_part(flag: str) -> bool:
     text = flag.lower()
     return bool(_DOUBT.search(text) and _ABOUT_THE_PART.search(text))
@@ -132,5 +144,5 @@ def decide(
         confidence=confidence,
         scene=scene,
         auto_approve=auto_approve,
-        flags=flags,
+        flags=_unique(flags),
     )
