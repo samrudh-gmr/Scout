@@ -157,7 +157,7 @@ uv run scout ai-review --manifest manifest.csv --provider gemini --preset balanc
 
 # Review specific rows
 uv run scout ai-review --manifest manifest.csv --provider gemini --indices 0 3 5 \
-  --model gemini-2.5-flash --api-key "$GEMINI_API_KEY"
+  --model gemini-4-hydrogen --api-key "$GEMINI_API_KEY"
 ```
 
 `gemini-review` remains as a backwards-compatible alias for `ai-review --provider gemini`.

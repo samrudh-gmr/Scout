@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-import json
+import os
+import re
 import time
 from typing import Any
 
@@ -12,38 +13,14 @@ from video_reviewer.ai_review.models import (
     ReviewRequest,
     ReviewResponse,
 )
-from video_reviewer.ai_review.providers.gemini import PROMPT_TEMPLATE
+from video_reviewer.ai_review.prompt import prompt_for
 
+__all__ = ["VisionProviderBase", "parse_response", "prompt_for"]
 
-def prompt_for(request: ReviewRequest) -> str:
-    context = {
-        "source_name": request.source_name,
-        "year_month": request.year_month,
-        "capture_time": request.capture_time,
-        "source_hints": request.source_hints,
-        "frames": [
-            {
-                "index": idx,
-                "timestamp_seconds": frame.timestamp_seconds,
-                "width": frame.width,
-                "height": frame.height,
-                "downscaled": frame.downscaled,
-            }
-            for idx, frame in enumerate(request.frames)
-        ],
-    }
-    prompt = PROMPT_TEMPLATE.format(context=json.dumps(context, indent=2, sort_keys=True))
-
-    # Appended, never interpolated: the guide and corrections are operator-owned
-    # text and a stray brace would blow up .format().
-    from video_reviewer.config import build_corrections_context
-    from video_reviewer.naming_guide import load_guide
-
-    sections = [prompt, "# Naming guide (authoritative — follow it over your own instincts)", load_guide()]
-    corrections = build_corrections_context()
-    if corrections:
-        sections.append(corrections)
-    return "\n\n".join(sections)
+_KEY_TOKENS = ("api key", "api_key", "permission", "unauth", "forbidden")
+_RATE_TOKENS = ("rate limit", "rate_limit", "ratelimit", "quota", "resource_exhausted", "too many requests")
+_REQUEST_TOKENS = ("not found", "not_found", "invalid_argument", "invalid argument", "bad request", "unsupported")
+_RETRYABLE = {ErrorCategory.RATE_LIMIT, ErrorCategory.PROVIDER_UNAVAILABLE}
 
 
 def parse_response(data: dict[str, Any]) -> ReviewResponse:
@@ -75,6 +52,16 @@ def _parse_bool(value: Any) -> bool:
     return bool(value)
 
 
+def _http_status(exc: Exception) -> int | None:
+    """The HTTP status an SDK error carries, or a leading one in its message."""
+    for attr in ("code", "status_code"):
+        value = getattr(exc, attr, None)
+        if isinstance(value, int) and not isinstance(value, bool) and 400 <= value <= 599:
+            return value
+    matched = re.match(r"\s*(?:error code:?\s*)?([45]\d\d)\b", str(exc), re.IGNORECASE)
+    return int(matched.group(1)) if matched else None
+
+
 class VisionProviderBase:
     """Shared key handling and bounded retry logic for official vision SDKs."""
 
@@ -92,8 +79,6 @@ class VisionProviderBase:
         explicit = (api_key or "").strip()
         if explicit:
             return explicit
-        import os
-
         return next((os.environ[name].strip() for name in self.env_key_names if os.environ.get(name, "").strip()), None)
 
     def status(self, config: ProviderConfig | None = None) -> ProviderStatus:
@@ -127,31 +112,41 @@ class VisionProviderBase:
         if not key:
             raise AiReviewError(self.key_message, ErrorCategory.MISSING_KEY)
         model = (config.model or "").strip() or self.default_model
-        last_error: Exception | None = None
-        for attempt in range(max(1, max_retries + 1)):
+        attempts = max(1, max_retries + 1)
+        for attempt in range(attempts):
             try:
                 return self._generate(key, model, prompt, frames)
             except AiReviewError:
                 raise
             except Exception as exc:  # SDK exception classes differ between versions.
-                last_error = exc
                 category = self._categorize_exception(exc)
-                if category not in {ErrorCategory.RATE_LIMIT, ErrorCategory.PROVIDER_UNAVAILABLE} or attempt == max_retries:
-                    raise AiReviewError(self._safe_exception_message(category, exc), category) from exc
+                # Only a busy or throttled provider is worth asking again. A bad
+                # key, an unknown model or a malformed request fails the same way
+                # every time, so retrying only delays the real message.
+                if category not in _RETRYABLE or attempt == attempts - 1:
+                    raise AiReviewError(self._safe_exception_message(category, exc, model), category) from exc
                 time.sleep(min(2**attempt, 4))
-        raise AiReviewError(str(last_error or "Provider failed"), ErrorCategory.PROVIDER_UNAVAILABLE)
+        raise AiReviewError(self._safe_exception_message(ErrorCategory.PROVIDER_UNAVAILABLE, None, model))
 
     def _categorize_exception(self, exc: Exception) -> ErrorCategory:
+        code = _http_status(exc)
         text = f"{type(exc).__name__}: {exc}".lower()
-        if any(token in text for token in ("api key", "permission", "unauth", "forbidden", "401", "403")):
+        if code in (401, 403) or any(token in text for token in _KEY_TOKENS):
             return ErrorCategory.INVALID_KEY
-        if any(token in text for token in ("quota", "rate", "429", "resource_exhausted")):
+        if code == 429 or any(token in text for token in _RATE_TOKENS):
             return ErrorCategory.RATE_LIMIT
+        if (code is not None and 400 <= code < 500 and code != 408) or any(token in text for token in _REQUEST_TOKENS):
+            return ErrorCategory.INVALID_REQUEST
         return ErrorCategory.PROVIDER_UNAVAILABLE
 
-    def _safe_exception_message(self, category: ErrorCategory, exc: Exception) -> str:
+    def _safe_exception_message(self, category: ErrorCategory, exc: Exception | None, model: str = "") -> str:
         if category == ErrorCategory.INVALID_KEY:
             return f"{self.display_name} rejected the API key. Check that it is valid and enabled."
         if category == ErrorCategory.RATE_LIMIT:
             return f"{self.display_name} rate limit or quota reached. Try fewer videos or a cheaper preset."
+        if category == ErrorCategory.INVALID_REQUEST:
+            return (
+                f"{self.display_name} rejected the request for model '{model}'. "
+                "The model may be misspelled, retired, or unavailable to this key. Pick another model and try again."
+            )
         return f"{self.display_name} is temporarily unavailable. Try again later or choose another provider."

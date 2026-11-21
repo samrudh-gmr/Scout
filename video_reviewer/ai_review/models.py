@@ -10,6 +10,7 @@ class ErrorCategory(StrEnum):
     MISSING_KEY = "missing_key"
     MISSING_DEPENDENCY = "missing_dependency"
     INVALID_KEY = "invalid_key"
+    INVALID_REQUEST = "invalid_request"
     RATE_LIMIT = "rate_limit"
     PROVIDER_UNAVAILABLE = "provider_unavailable"
     MALFORMED_RESPONSE = "malformed_response"

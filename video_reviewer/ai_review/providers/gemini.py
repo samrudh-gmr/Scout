@@ -1,47 +1,33 @@
 from __future__ import annotations
 
+import hashlib
 import json
-import os
 import time
 from typing import Any
 
-from video_reviewer.ai_review.models import (
-    AiReviewError,
-    ErrorCategory,
-    ProviderConfig,
-    ProviderStatus,
-    ReviewRequest,
-    ReviewResponse,
-)
+from video_reviewer.ai_review.models import AiReviewError, ErrorCategory
+from video_reviewer.ai_review.prompt import PROMPT_TEMPLATE  # noqa: F401 - kept for older imports
+from video_reviewer.ai_review.providers.common import VisionProviderBase
 
-PROMPT_TEMPLATE = """You are classifying a single manufacturing/industrial video for a strict file-naming SOP.
-You are given representative video frames and metadata.
-
-Metadata / source hints:
-{context}
-
-Determine, from the frames and hints:
-- part: the specific recognizable industrial part, such as "Aluminum Wheel", "Aircraft Bracket", or "Boat Propeller". Use an empty string if no distinct part can be identified.
-- description: when part is non-empty, provide only the concise process/action in Title Case, e.g. "Sanding" or "Surface Finishing". When part is empty, keep the established "Action + Object" description behavior, e.g. "Sanding Automotive Body Panel". Do not force a generic description such as "Surface Finishing Test" when the footage supports a useful object description.
-- industry: if and only if part is non-empty, choose exactly one of: "Specialty Vehicle", "Marine & Boat Building", "General Manufacturing", "Consumer and Recreation", "Architecture", "Aerospace & Defense". If part is empty, use an empty string.
-- client_or_location: the client company or site name. Prefer filename/location hints. Use "Unknown" only if genuinely impossible.
-- is_manual: true if a human operator performing the process is visible.
-- confidence: confidence from 0.0 to 1.0 in description + client/location.
-- rationale: one short sentence explaining the classification.
-- flags: short uncertainty flags, e.g. ["client_unknown", "blurry_frames"].
-
-Hard constraints: part and industry (when non-empty), description, and client_or_location MUST NOT contain underscores or any of these characters: / \\ : * ? " < > |. Description and client_or_location may not be empty. Industry must be empty or one of the six exact categories above.
-
-Respond with ONLY a JSON object with exactly these keys: part, description, industry, client_or_location, is_manual, confidence, rationale, flags."""
+_MODEL_CACHE_SECONDS = 600
+_MODEL_LIST_TIMEOUT_MS = 8000
+# Gemini models that answer generateContent but cannot name a clip from frames.
+_NON_VISION_MARKERS = ("tts", "image", "live", "embedding", "transcribe", "translate", "omni", "audio", "banana")
 
 
-class GeminiProvider:
+class GeminiProvider(VisionProviderBase):
     provider_id = "gemini"
     display_name = "Gemini API"
-    default_model = "gemini-3.7-flash"
+    default_model = "gemini-4-hydrogen"
     cheap_model = "gemini-3.5-flash-lite"
-    accurate_model = "gemini-3.7-flash"
+    accurate_model = "gemini-4-carbon"
     env_key_names = ("GEMINI_API_KEY", "GOOGLE_API_KEY")
+    missing_sdk_message = "google-genai is not installed. Run `uv sync` or `pip install google-genai`."
+    key_message = "Gemini SDK ready. Paste an API key or set GEMINI_API_KEY. Create one at https://aistudio.google.com/apikey"
+    ready_message = "Gemini API ready."
+
+    # key fingerprint -> (fetched at, model ids). Never holds the key itself.
+    _model_cache: dict[str, tuple[float, list[str]]] = {}
 
     def _sdk_installed(self) -> bool:
         try:
@@ -50,96 +36,35 @@ class GeminiProvider:
             return False
         return True
 
-    def resolve_api_key(self, api_key: str | None = None) -> str | None:
-        explicit = (api_key or "").strip()
-        if explicit:
-            return explicit
-        for name in self.env_key_names:
-            value = os.environ.get(name, "").strip()
-            if value:
-                return value
-        return None
+    def list_models(self, api_key: str | None = None) -> list[str]:
+        """Vision-capable Gemini models this key can use, or [] if they cannot be listed."""
+        key = self.resolve_api_key(api_key)
+        if not key or not self._sdk_installed():
+            return []
+        fingerprint = hashlib.sha256(key.encode("utf-8")).hexdigest()
+        cached = self._model_cache.get(fingerprint)
+        if cached and time.monotonic() - cached[0] < _MODEL_CACHE_SECONDS:
+            return list(cached[1])
+        try:
+            from google import genai
 
-    def status(self, config: ProviderConfig | None = None) -> ProviderStatus:
-        key = self.resolve_api_key(config.api_key if config else None)
-        if not self._sdk_installed():
-            return ProviderStatus(
-                provider_id=self.provider_id,
-                display_name=self.display_name,
-                available=False,
-                has_key=bool(key),
-                message="google-genai is not installed. Run `uv sync` or `pip install google-genai`.",
-                default_model=self.default_model,
-                env_key_names=self.env_key_names,
-                cheap_model=self.cheap_model,
-                accurate_model=self.accurate_model,
-            )
-        if not key:
-            return ProviderStatus(
-                provider_id=self.provider_id,
-                display_name=self.display_name,
-                available=True,
-                has_key=False,
-                message="Gemini SDK ready. Paste an API key or set GEMINI_API_KEY. Create one at https://aistudio.google.com/apikey",
-                default_model=self.default_model,
-                env_key_names=self.env_key_names,
-                cheap_model=self.cheap_model,
-                accurate_model=self.accurate_model,
-            )
-        return ProviderStatus(
-            provider_id=self.provider_id,
-            display_name=self.display_name,
-            available=True,
-            has_key=True,
-            message="Gemini API ready.",
-            default_model=self.default_model,
-            env_key_names=self.env_key_names,
-            cheap_model=self.cheap_model,
-            accurate_model=self.accurate_model,
-        )
-
-    def classify(self, request: ReviewRequest, config: ProviderConfig) -> ReviewResponse:
-        if not self._sdk_installed():
-            raise AiReviewError(self.status(config).message, ErrorCategory.MISSING_DEPENDENCY)
-        key = self.resolve_api_key(config.api_key)
-        if not key:
-            raise AiReviewError(
-                "No Gemini API key. Paste one in the app, pass --api-key, or set GEMINI_API_KEY.",
-                ErrorCategory.MISSING_KEY,
-            )
-        model = (config.model or "").strip() or self.default_model
-        from video_reviewer.ai_review.providers.common import prompt_for
-
-        payload = self._generate_with_retry(
-            key, model, prompt_for(request), request.frames[: request.policy.max_frames], request.policy.max_retries,
-        )
-        return self._parse_response(payload)
-
-    def generate_json(self, prompt: str, frames, config: ProviderConfig, max_retries: int = 1) -> dict[str, Any]:
-        """Send any prompt plus images and get parsed JSON back, with retries."""
-        status = self.status(config)
-        if not status.available:
-            raise AiReviewError(status.message, ErrorCategory.MISSING_DEPENDENCY)
-        if not status.has_key:
-            raise AiReviewError(status.message, ErrorCategory.MISSING_KEY)
-        model = (config.model or "").strip() or self.default_model
-        return self._generate_with_retry(self.resolve_api_key(config.api_key), model, prompt, frames, max_retries)
-
-    def _generate_with_retry(self, api_key: str, model: str, prompt: str, frames, max_retries: int) -> dict[str, Any]:
-        last_error: Exception | None = None
-        attempts = max(1, max_retries + 1)
-        for attempt in range(attempts):
-            try:
-                return self._generate(api_key, model, prompt, frames)
-            except AiReviewError:
-                raise
-            except Exception as exc:  # noqa: BLE001 - SDK exceptions vary by version
-                last_error = exc
-                category = self._categorize_exception(exc)
-                if category not in {ErrorCategory.RATE_LIMIT, ErrorCategory.PROVIDER_UNAVAILABLE} or attempt == attempts - 1:
-                    raise AiReviewError(self._safe_exception_message(exc, category), category) from exc
-                time.sleep(min(2 ** attempt, 4))
-        raise AiReviewError(str(last_error or "Provider failed"), ErrorCategory.PROVIDER_UNAVAILABLE)
+            client = genai.Client(api_key=key, http_options={"timeout": _MODEL_LIST_TIMEOUT_MS})
+            listed = list(client.models.list())
+        except Exception:  # noqa: BLE001 - the picker falls back to the known models
+            return []
+        names: set[str] = set()
+        for model in listed:
+            name = str(getattr(model, "name", "") or "").removeprefix("models/")
+            actions = getattr(model, "supported_actions", None) or []
+            if not name.startswith("gemini-") or "generateContent" not in actions:
+                continue
+            if any(marker in name for marker in _NON_VISION_MARKERS):
+                continue
+            names.add(name)
+        models = sorted(names)
+        if models:
+            self._model_cache[fingerprint] = (time.monotonic(), models)
+        return models
 
     def _generate(self, api_key: str, model: str, prompt: str, frames) -> dict[str, Any]:
         from google import genai
@@ -162,40 +87,3 @@ class GeminiProvider:
             raise AiReviewError(f"Model did not return valid JSON: {text[:160]}", ErrorCategory.MALFORMED_RESPONSE) from exc
         data["_raw_text"] = text
         return data
-
-    def _parse_response(self, data: dict[str, Any]) -> ReviewResponse:
-        try:
-            confidence = float(data.get("confidence", 0.0))
-        except (TypeError, ValueError):
-            confidence = 0.0
-        flags = data.get("flags") or []
-        if not isinstance(flags, list):
-            flags = [str(flags)]
-        return ReviewResponse(
-            description=str(data.get("description", "")).strip(),
-            client_or_location=str(data.get("client_or_location", "")).strip(),
-            is_manual=(data.get("is_manual") is True or str(data.get("is_manual", "")).strip().lower() in {"true", "1", "yes"}),
-            confidence=max(0.0, min(1.0, confidence)),
-            part=str(data.get("part", "")).strip(),
-            industry=str(data.get("industry", "")).strip(),
-            rationale=str(data.get("rationale", "")).strip(),
-            flags=[str(flag).strip() for flag in flags if str(flag).strip()],
-            raw_text=str(data.get("_raw_text", "")),
-        )
-
-    def _categorize_exception(self, exc: Exception) -> ErrorCategory:
-        text = f"{type(exc).__name__}: {exc}".lower()
-        if any(token in text for token in ("api key", "permission", "unauth", "forbidden", "401", "403")):
-            return ErrorCategory.INVALID_KEY
-        if any(token in text for token in ("quota", "rate", "429", "resource_exhausted")):
-            return ErrorCategory.RATE_LIMIT
-        if any(token in text for token in ("500", "502", "503", "504", "timeout", "temporarily")):
-            return ErrorCategory.PROVIDER_UNAVAILABLE
-        return ErrorCategory.PROVIDER_UNAVAILABLE
-
-    def _safe_exception_message(self, exc: Exception, category: ErrorCategory) -> str:
-        if category == ErrorCategory.INVALID_KEY:
-            return "Gemini rejected the API key. Check that it is valid and enabled for AI Studio."
-        if category == ErrorCategory.RATE_LIMIT:
-            return "Gemini rate limit or quota reached. Try fewer videos, wait, or use a cheaper model/preset."
-        return "Gemini is temporarily unavailable. Try again later or choose another provider."

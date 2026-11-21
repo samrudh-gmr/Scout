@@ -9,9 +9,10 @@ from __future__ import annotations
 from pathlib import Path
 
 from video_reviewer.ai_review.models import AiReviewError as GeminiError, RowResult
+from video_reviewer.ai_review.providers.gemini import GeminiProvider
 from video_reviewer.ai_review.service import pending_indices, provider_status, review_rows_with_ai
 
-DEFAULT_MODEL = "gemini-2.5-flash"
+DEFAULT_MODEL = GeminiProvider.default_model
 CONFIDENCE_THRESHOLD = 0.78
 
 

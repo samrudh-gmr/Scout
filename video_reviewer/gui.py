@@ -348,6 +348,22 @@ def create_app(manifest_path: Path | None = None) -> FastAPI:
         # Re-read: some providers (codex-proxy) persist a generated key as a
         # side effect of status(), so the pre-call value can be stale here.
         stored = load_api_key(provider) or stored
+        # The picker offers what this key can really use. Listing is a network
+        # call, so it runs off the event loop and only once a key is present;
+        # if it fails the three models the provider ships with still show.
+        models = list(status.models)
+        if not models and status.available and status.has_key:
+            import anyio
+
+            from video_reviewer.ai_review import get_provider
+
+            lister = getattr(get_provider(provider), "list_models", None)
+            if lister is not None:
+                models = await anyio.to_thread.run_sync(lambda: lister(stored or None))
+        if not models:
+            models = list(dict.fromkeys(
+                model for model in (status.default_model, status.cheap_model, status.accurate_model) if model
+            ))
         return JSONResponse({
             "saved_key": bool(stored),
             "key_hint": api_key_hint(provider),
@@ -359,7 +375,7 @@ def create_app(manifest_path: Path | None = None) -> FastAPI:
             "default_model": status.default_model,
             "cheap_model": status.cheap_model,
             "accurate_model": status.accurate_model,
-            "models": list(status.models),
+            "models": models,
             "env_key_names": list(status.env_key_names),
             "providers": available_providers(),
             "pending": pending_indices(manifest_path),
