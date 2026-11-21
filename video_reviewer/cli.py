@@ -5,6 +5,7 @@ import subprocess
 from pathlib import Path
 
 from video_reviewer.manifest import REVIEW_PENDING, write_manifest_csv
+from video_reviewer.run_context import parse_part_choices
 from video_reviewer.workflow import apply_manifest, build_prepare_manifest
 
 
@@ -13,10 +14,16 @@ def default_manifest_path() -> Path:
 
 
 def command_prepare(args: argparse.Namespace) -> int:
+    try:
+        part_choices = parse_part_choices(args.part_context)
+    except ValueError as exc:
+        print(f"Error: {exc}")
+        return 2
     result = build_prepare_manifest(
         input_dir=Path(args.input).resolve(),
         year_month=args.year_month,
         client_or_location=args.client,
+        part_choices=part_choices,
         start_seq=args.start_seq,
         tmp_dir=Path(args.tmp_dir).resolve(),
         proxy_scale=args.proxy_scale,
@@ -134,6 +141,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Optional batch YYYY-MM value. If omitted, prepare falls back to filename patterns then embedded creation time.",
     )
     prepare_parser.add_argument("--client", default="", help="Optional client/location applied to every video in the folder")
+    prepare_parser.add_argument(
+        "--part-context",
+        default="",
+        help="Optional part names this batch may contain, comma-separated (e.g. \"RV Front Cap, Truck Hood\"). "
+        "The model picks one of them or none per video; a part outside the list goes to review.",
+    )
     prepare_parser.add_argument("--start-seq", type=int, default=1, help="Starting sequence number")
     prepare_parser.add_argument("--tmp-dir", default="tmp", help="Directory for proxy and frame outputs")
     prepare_parser.add_argument("--proxy-scale", type=int, default=1280, help="Maximum proxy width")

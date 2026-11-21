@@ -124,6 +124,7 @@ Options:
 
 - `--year-month YYYY-MM` — batch override for the year-month field.
 - `--client TEXT` — optional client/location applied to every video in the input folder.
+- `--part-context TEXT` — optional comma-separated part names this folder may contain (e.g. `"RV Front Cap, Truck Hood"`). Each video gets one of them or none; a part outside the list, or no part on a process clip, is marked `needs_review`. Operator videos never get a part.
 - `--start-seq N` — retained for CLI compatibility; sequences are now derived from repeated final names.
 - `--tmp-dir DIR` — directory for proxies and frames (default: `tmp`).
 - `--proxy-scale N` — max proxy width in pixels for local playback (default: `1280`).

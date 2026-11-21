@@ -67,6 +67,7 @@ def build_prepare_manifest(
     input_dir: Path,
     year_month: str,
     client_or_location: str = "",
+    part_choices: list[str] | None = None,
     start_seq: int,
     tmp_dir: Path,
     proxy_scale: int,
@@ -88,6 +89,7 @@ def build_prepare_manifest(
                 path,
                 year_month=year_month,
                 batch_client_override=batch_client_override,
+                part_choices=list(part_choices or []),
                 tmp_dir=tmp_dir,
                 proxy_scale=proxy_scale,
                 sample_count=sample_count,
@@ -110,6 +112,7 @@ def _prepare_one(
     *,
     year_month: str,
     batch_client_override: str,
+    part_choices: list[str],
     tmp_dir: Path,
     proxy_scale: int,
     sample_count: int,
@@ -176,6 +179,9 @@ def _prepare_one(
                 # not a model suggestion. Keep this provenance so AI
                 # review cannot replace it with a visual guess later.
                 "batch_client_override": batch_client_override,
+                # Candidate part names for this batch. Context for the model,
+                # never a pre-filled answer: row.part stays empty until review.
+                "part_choices": part_choices,
                 "duration": metadata.get("duration", ""),
                 "size": metadata.get("size", ""),
                 "width": metadata.get("width", ""),

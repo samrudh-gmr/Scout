@@ -23,6 +23,7 @@ from video_reviewer.ai_review.providers.openai import OpenAIProvider
 from video_reviewer.ai_review.providers.codex_proxy import CodexProxyProvider
 from video_reviewer.manifest import manifest_transaction, REVIEW_APPROVED, REVIEW_BLOCKED, REVIEW_NEEDS_REVIEW, REVIEW_PENDING, read_manifest_csv, write_manifest_csv
 from video_reviewer.media import extract_sample_frames, create_frame_dir
+from video_reviewer.run_context import part_choices_from_hints
 from video_reviewer.sop import build_proposed_name
 from video_reviewer.workflow import resequence_and_rename
 
@@ -262,8 +263,14 @@ def _optional_int(value) -> int | None:
 def _apply_response(row, response: ReviewResponse, policy: ReviewPolicy) -> None:
     if not response.description or not response.client_or_location:
         raise AiReviewError("AI response was missing description or client/location.", ErrorCategory.MALFORMED_RESPONSE)
-    batch_client_override = str(_parse_hints(row.source_hints).get("batch_client_override", "")).strip()
-    decision = decide(response, batch_client_override=batch_client_override, policy=policy)
+    hints = _parse_hints(row.source_hints)
+    batch_client_override = str(hints.get("batch_client_override", "")).strip()
+    decision = decide(
+        response,
+        batch_client_override=batch_client_override,
+        policy=policy,
+        part_choices=part_choices_from_hints(hints),
+    )
     row.description = decision.description
     row.part = decision.part
     row.industry = decision.industry

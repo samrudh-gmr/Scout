@@ -14,7 +14,13 @@ from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
 
-from video_reviewer.ai_review.decide import is_operator_clip
+from video_reviewer.ai_review.decide import (
+    FLAG_PART_NOT_IDENTIFIED,
+    FLAG_PART_NOT_IN_CHOICES,
+    is_operator_clip,
+)
+from video_reviewer.manifest import REVIEW_NEEDS_REVIEW
+from video_reviewer.run_context import match_part_choice, part_choices_from_hints
 from video_reviewer.manifest import (
     manifest_transaction,
     REVIEW_APPROVED,
@@ -100,7 +106,10 @@ def review_video(row_index: int) -> list[dict]:
         hints = json.loads(row.source_hints or "{}")
         context["source_hints"] = hints
     except json.JSONDecodeError:
-        pass
+        hints = {}
+    part_choices = part_choices_from_hints(hints)
+    if part_choices:
+        context["part_choices"] = part_choices
 
     result: list[dict] = [
         {"type": "text", "text": f"## Video: {source_name}\n\n```json\n{json.dumps(context, indent=2)}\n```\n\nSample frames follow:"},
@@ -145,6 +154,14 @@ def review_video(row_index: int) -> list[dict]:
             "4. **client_or_location**: Client company or site name\n"
             "5. Whether this is a manual process (human operator visible)\n\n"
             "Then call `approve_video` with your classification."
+        )
+        + (
+            "\n\nThe operator listed the parts in this batch. Set **part** to exactly one of the part choices: "
+            + ", ".join(f'"{choice}"' for choice in part_choices)
+            + ". If the frames clearly show none of them, or you cannot tell which, leave part empty — do not guess. "
+            "Operator clips still take no part."
+            if part_choices
+            else ""
         ),
     })
     return result
@@ -183,14 +200,33 @@ def approve_video(
         row.part = part.strip()
         row.industry = industry.strip()
         # Same rule as the built-in review: operator footage carries no part.
-        if is_operator_clip("", row.description):
+        operators = is_operator_clip("", row.description)
+        if operators:
             row.part = ""
+        # Same rule as the built-in review: a part outside the operator's list,
+        # or no part at all on a process clip, waits for a person.
+        try:
+            hints = json.loads(row.source_hints or "{}")
+        except json.JSONDecodeError:
+            hints = {}
+        choices = part_choices_from_hints(hints)
+        choice_flag = ""
+        if choices and not operators:
+            listed = match_part_choice(row.part, choices)
+            if listed:
+                row.part = listed
+            else:
+                choice_flag = FLAG_PART_NOT_IN_CHOICES if row.part else FLAG_PART_NOT_IDENTIFIED
         if not row.part:
             row.industry = ""
         row.client_or_location = client_or_location.strip()
         if year_month:
             row.year_month = year_month.strip()
-        row.review_status = REVIEW_APPROVED
+        row.review_status = REVIEW_NEEDS_REVIEW if choice_flag else REVIEW_APPROVED
+        if choice_flag:
+            existing = [flag.strip() for flag in (row.ai_flags or "").split(";") if flag.strip()]
+            if choice_flag not in existing:
+                row.ai_flags = "; ".join(existing + [choice_flag])
 
         # Without this, every row approved here keeps the "001" placeholder
         # sequence assigned at prepare time (when every description was still
@@ -207,8 +243,13 @@ def approve_video(
             return f"Cannot approve: {this_row_error}"
 
         write_manifest_csv(manifest, rows)
+    headline = (
+        f"Needs review ({choice_flag}; part choices are {', '.join(choices)}): {source_name}"
+        if choice_flag
+        else f"Approved: {source_name}"
+    )
     return (
-        f"Approved: {source_name}\n"
+        f"{headline}\n"
         f"Proposed name: {row.proposed_name}\n"
         f"Description: {row.description}\n"
         f"Industry: {row.industry or 'none'}\n"

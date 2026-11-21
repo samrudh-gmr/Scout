@@ -267,7 +267,12 @@ def create_app(manifest_path: Path | None = None) -> FastAPI:
     @app.post("/api/run-prepare")
     async def run_prepare_route(body: dict) -> JSONResponse:
         import anyio
+        from video_reviewer.run_context import parse_part_choices
         from video_reviewer.workflow import build_prepare_manifest
+        try:
+            part_choices = parse_part_choices(body.get("part_choices"))
+        except ValueError as exc:
+            return JSONResponse({"error": str(exc)}, status_code=422)
         if not prepare_lock.acquire(blocking=False):
             return JSONResponse({"error": "A prepare job is already running. Wait for it to finish."}, status_code=409)
         try:
@@ -277,6 +282,7 @@ def create_app(manifest_path: Path | None = None) -> FastAPI:
                     input_dir=input_dir,
                     year_month=body.get("year_month", ""),
                     client_or_location=body.get("client_or_location", ""),
+                    part_choices=part_choices,
                     start_seq=int(body.get("start_seq", 1)),
                     tmp_dir=Path(body.get("tmp_dir", "tmp")).expanduser().resolve(),
                     proxy_scale=int(body.get("proxy_scale", 1280)),

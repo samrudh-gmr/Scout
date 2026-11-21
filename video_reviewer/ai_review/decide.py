@@ -9,6 +9,7 @@ import re
 from dataclasses import dataclass, field
 
 from video_reviewer.ai_review.models import ReviewPolicy, ReviewResponse
+from video_reviewer.run_context import match_part_choice
 
 SCENE_ROBOT = "robot_process"
 SCENE_MANUAL = "manual_process"
@@ -16,8 +17,13 @@ SCENE_OPERATORS = "operators"
 SCENES = (SCENE_ROBOT, SCENE_MANUAL, SCENE_OPERATORS)
 
 FLAG_PART_DROPPED = "part_dropped_for_operators"
+FLAG_PART_NOT_IN_CHOICES = "part_not_in_choices"
+FLAG_PART_NOT_IDENTIFIED = "part_not_identified"
 
-_SERIOUS_FLAGS = {"client_unknown", "unknown_client", "unsafe", "invalid", FLAG_PART_DROPPED}
+_SERIOUS_FLAGS = {
+    "client_unknown", "unknown_client", "unsafe", "invalid",
+    FLAG_PART_DROPPED, FLAG_PART_NOT_IN_CHOICES, FLAG_PART_NOT_IDENTIFIED,
+}
 _OPERATOR_DESCRIPTION = re.compile(r"^\s*operators?\b", re.IGNORECASE)
 
 
@@ -48,7 +54,14 @@ def is_operator_clip(scene: str, description: str) -> bool:
     return normalize_scene(scene) == SCENE_OPERATORS or bool(_OPERATOR_DESCRIPTION.match(description or ""))
 
 
-def decide(response: ReviewResponse, *, batch_client_override: str = "", policy: ReviewPolicy) -> Decision:
+def decide(
+    response: ReviewResponse,
+    *,
+    batch_client_override: str = "",
+    policy: ReviewPolicy,
+    part_choices: list[str] | None = None,
+) -> Decision:
+    choices = list(part_choices or [])
     description = response.description.strip()
     part = response.part.strip()
     industry = response.industry.strip()
@@ -69,6 +82,18 @@ def decide(response: ReviewResponse, *, batch_client_override: str = "", policy:
         # The SOP prefixes manual work with "Manual". Applied here rather than
         # trusting each model to remember.
         description = f"Manual {description}"
+
+    if choices and not operators:
+        # The operator said what this batch can contain. A listed part takes the
+        # operator's spelling; anything else is kept as the model wrote it and
+        # a person decides. The list never forces a part onto a clip.
+        listed = match_part_choice(part, choices)
+        if listed:
+            part = listed
+        elif part:
+            flags.append(FLAG_PART_NOT_IN_CHOICES)
+        else:
+            flags.append(FLAG_PART_NOT_IDENTIFIED)
 
     if not part:
         industry = ""

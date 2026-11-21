@@ -30,6 +30,12 @@ export async function prepareView({ view, dock, go }) {
     placeholder: "Optional — e.g. SOLV California",
   });
 
+  const partChoices = el("input", {
+    type: "text",
+    id: "partChoices",
+    placeholder: "Optional — e.g. RV Front Cap, Truck Hood",
+  });
+
   const setFolder = (path) => {
     if (!path) return;
     folder.value = path;
@@ -49,6 +55,7 @@ export async function prepareView({ view, dock, go }) {
           input_dir: input,
           year_month: yearMonth.value.trim(),
           client_or_location: client.value.trim(),
+          part_choices: partChoices.value.trim(),
           tmp_dir: `${input.replace(/\/$/, "")}/.video-renamer-tmp`,
           sample_count: 0,
           proxy_scale: 1280,
@@ -113,6 +120,18 @@ export async function prepareView({ view, dock, go }) {
           { style: { marginTop: "14px", maxWidth: "420px" } },
           el("label", { for: "batchClient" }, "Client / location override (optional)"),
           client,
+        ),
+        el(
+          "div.field",
+          { style: { marginTop: "14px", maxWidth: "420px" } },
+          el("label", { for: "partChoices" }, "Parts in this batch (optional)"),
+          partChoices,
+        ),
+        el(
+          "p.hint",
+          null,
+          "List the one or two parts this folder contains, separated by commas. Each video gets one of them, or none. " +
+            "A video that doesn't match goes to review instead of being guessed, and operator videos never get a part.",
         ),
         el(
           "p.hint",

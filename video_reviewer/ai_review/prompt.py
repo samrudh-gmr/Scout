@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 
 from video_reviewer.ai_review.models import ReviewRequest
+from video_reviewer.run_context import part_choices_from_hints
 
 PROMPT_TEMPLATE = """You are classifying a single manufacturing/industrial video for a strict file-naming SOP.
 You are given representative video frames and metadata.
@@ -55,7 +56,19 @@ def prompt_for(request: ReviewRequest) -> str:
     from video_reviewer.config import build_corrections_context
     from video_reviewer.naming_guide import load_guide
 
-    sections = [prompt, "# Naming guide (authoritative — follow it over your own instincts)", load_guide()]
+    sections = [prompt]
+    choices = part_choices_from_hints(request.source_hints)
+    if choices:
+        listed = ", ".join(json.dumps(choice) for choice in choices)
+        sections.append(
+            "# Part choices for this batch (from the operator)\n"
+            f"The operator says the parts in this batch are: {listed}.\n"
+            "For a robot_process or manual_process clip, set part to exactly one of these, copied character for character, "
+            "choosing the one the frames best support. If the part in the frames is clearly none of them, or you cannot "
+            "tell which one it is, set part to an empty string and add the flag \"part_not_identified\" — do not guess and "
+            "do not invent another part name. This list does not change the scene rule: operators clips still have no part."
+        )
+    sections += ["# Naming guide (authoritative — follow it over your own instincts)", load_guide()]
     corrections = build_corrections_context()
     if corrections:
         sections.append(corrections)
