@@ -106,16 +106,23 @@ def review_rows_with_ai(
     if not status.has_key:
         raise AiReviewError(status.message, ErrorCategory.MISSING_KEY)
 
+    from video_reviewer.customer_brief import BatchBriefs
+
+    briefs = BatchBriefs(
+        provider_id=provider.provider_id,
+        api_key=provider.resolve_api_key(api_key) if provider.provider_id == "gemini" else None,
+        model=model or "",
+    )
     results: list[RowResult] = []
     for index in indices:
-        result = _review_one_row(manifest_path, index, provider, config, policy)
+        result = _review_one_row(manifest_path, index, provider, config, policy, briefs)
         results.append(result)
         if on_progress is not None:
             on_progress(result)
     return results
 
 
-def _review_one_row(manifest_path: Path, index: int, provider, config: ProviderConfig, policy: ReviewPolicy) -> RowResult:
+def _review_one_row(manifest_path: Path, index: int, provider, config: ProviderConfig, policy: ReviewPolicy, briefs=None) -> RowResult:
     with manifest_transaction(manifest_path):
         rows = read_manifest_csv(manifest_path)
         if index < 0 or index >= len(rows):
@@ -127,8 +134,9 @@ def _review_one_row(manifest_path: Path, index: int, provider, config: ProviderC
     started = time.monotonic()
     request = response = decision = None
     context = _decision_context(row, policy)
+    brief = briefs.for_hints(_parse_hints(row.source_hints)) if briefs is not None else None
     try:
-        request = _build_request(row, policy)
+        request = _build_request(row, policy, brief.text if brief else "")
         response = provider.classify(request, config)
         with manifest_transaction(manifest_path):
             rows = read_manifest_csv(manifest_path)
@@ -201,10 +209,11 @@ def _review_one_row(manifest_path: Path, index: int, provider, config: ProviderC
         response=getattr(row, "ai_rationale", ""),
         error=error,
         error_category=category,
+        customer_brief=brief.note if brief else "",
     )
 
 
-def _build_request(row, policy: ReviewPolicy) -> ReviewRequest:
+def _build_request(row, policy: ReviewPolicy, customer_brief: str = "") -> ReviewRequest:
     hints = _parse_hints(row.source_hints)
     frames = _load_frames(row, policy)
     if not frames:
@@ -216,6 +225,7 @@ def _build_request(row, policy: ReviewPolicy) -> ReviewRequest:
         source_hints=hints,
         frames=frames,
         policy=policy,
+        customer_brief=customer_brief,
     )
 
 

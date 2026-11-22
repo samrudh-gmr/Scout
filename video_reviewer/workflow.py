@@ -68,6 +68,7 @@ def build_prepare_manifest(
     year_month: str,
     client_or_location: str = "",
     part_choices: list[str] | None = None,
+    customer_brief: bool = False,
     start_seq: int,
     tmp_dir: Path,
     proxy_scale: int,
@@ -90,6 +91,7 @@ def build_prepare_manifest(
                 year_month=year_month,
                 batch_client_override=batch_client_override,
                 part_choices=list(part_choices or []),
+                customer_brief=customer_brief is True,
                 tmp_dir=tmp_dir,
                 proxy_scale=proxy_scale,
                 sample_count=sample_count,
@@ -114,6 +116,7 @@ def _prepare_one(
     batch_client_override: str,
     part_choices: list[str],
     tmp_dir: Path,
+    customer_brief: bool = False,
     proxy_scale: int,
     sample_count: int,
     ai_frame_max_width: int,
@@ -182,6 +185,9 @@ def _prepare_one(
                 # Candidate part names for this batch. Context for the model,
                 # never a pre-filled answer: row.part stays empty until review.
                 "part_choices": part_choices,
+                # Opt-in: look up what the batch client makes, once, at first
+                # review. Rows without this key read as off.
+                "customer_brief": customer_brief,
                 "duration": metadata.get("duration", ""),
                 "size": metadata.get("size", ""),
                 "width": metadata.get("width", ""),

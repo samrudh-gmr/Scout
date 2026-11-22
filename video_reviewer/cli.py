@@ -24,6 +24,7 @@ def command_prepare(args: argparse.Namespace) -> int:
         year_month=args.year_month,
         client_or_location=args.client,
         part_choices=part_choices,
+        customer_brief=args.customer_brief,
         start_seq=args.start_seq,
         tmp_dir=Path(args.tmp_dir).resolve(),
         proxy_scale=args.proxy_scale,
@@ -87,10 +88,15 @@ def command_ai_review(args: argparse.Namespace) -> int:
     if args.dry_run:
         return 0
 
+    brief_notes: list[str] = []
+
     def _progress(result) -> None:
         mark = "approved" if result.ok else result.status
         detail = result.error or result.proposed_name or result.response
         print(f"[{result.index}] {result.source_name}: {mark} — {detail}")
+        if result.customer_brief and result.customer_brief not in brief_notes:
+            brief_notes.append(result.customer_brief)
+            print(result.customer_brief)
 
     try:
         results = review_rows_with_ai(
@@ -147,6 +153,12 @@ def build_parser() -> argparse.ArgumentParser:
         default="",
         help="Optional part names this batch may contain, comma-separated (e.g. \"RV Front Cap, Truck Hood\"). "
         "The model picks one of them or none per video; a part outside the list goes to review.",
+    )
+    prepare_parser.add_argument(
+        "--customer-brief",
+        action="store_true",
+        help="Off by default. At first review, send only the --client name to a Gemini web search asking what that "
+        "company makes, and save the answer to ~/.video-renamer/customers/<name>.md as background for the model.",
     )
     prepare_parser.add_argument("--start-seq", type=int, default=1, help="Starting sequence number")
     prepare_parser.add_argument("--tmp-dir", default="tmp", help="Directory for proxy and frame outputs")

@@ -283,6 +283,7 @@ def create_app(manifest_path: Path | None = None) -> FastAPI:
                     year_month=body.get("year_month", ""),
                     client_or_location=body.get("client_or_location", ""),
                     part_choices=part_choices,
+                    customer_brief=body.get("customer_brief") is True,
                     start_seq=int(body.get("start_seq", 1)),
                     tmp_dir=Path(body.get("tmp_dir", "tmp")).expanduser().resolve(),
                     proxy_scale=int(body.get("proxy_scale", 1280)),
@@ -498,6 +499,7 @@ def create_app(manifest_path: Path | None = None) -> FastAPI:
             "approved": sum(1 for r in results if r.ok),
             "total": len(results),
             "results": [asdict(r) for r in results],
+            "customer_brief": list(dict.fromkeys(r.customer_brief for r in results if r.customer_brief)),
         })
 
     @app.post("/api/gemini/review")

@@ -90,6 +90,8 @@ class ReviewRequest:
     source_hints: dict[str, Any]
     frames: list[FramePayload]
     policy: ReviewPolicy = field(default_factory=ReviewPolicy)
+    # Untrusted web text about the client, or "". See video_reviewer/customer_brief.py.
+    customer_brief: str = ""
 
 
 @dataclass(frozen=True)
@@ -125,3 +127,5 @@ class RowResult:
     response: str = ""
     error: str = ""
     error_category: str = ""
+    # What happened to the opt-in customer brief, for the operator; "" when it was off.
+    customer_brief: str = ""

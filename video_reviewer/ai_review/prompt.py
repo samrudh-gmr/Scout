@@ -56,7 +56,13 @@ def prompt_for(request: ReviewRequest) -> str:
     from video_reviewer.config import build_corrections_context
     from video_reviewer.naming_guide import load_guide
 
+    from video_reviewer.customer_brief import prompt_block
+
     sections = [prompt]
+    # Reference data first, operator part choices after it: the choices outrank it.
+    brief = prompt_block(request.customer_brief)
+    if brief:
+        sections.append(brief)
     choices = part_choices_from_hints(request.source_hints)
     if choices:
         listed = ", ".join(json.dumps(choice) for choice in choices)
