@@ -190,7 +190,7 @@ def _build_request(row, policy: ReviewPolicy) -> ReviewRequest:
         year_month=row.year_month,
         capture_time=row.capture_time,
         source_hints=hints,
-        frames=frames[: policy.max_frames],
+        frames=frames,
         policy=policy,
     )
 
@@ -227,9 +227,17 @@ def _load_frames(row, policy: ReviewPolicy) -> list[FramePayload]:
             duration = 0.0
         frame_dir = create_frame_dir(Path(row.proxy_path).parent if row.proxy_path else Path(row.source_path).parent / "tmp", Path(row.source_path))
         existing = extract_sample_frames(Path(row.source_path), frame_dir, min(policy.max_frames, 12), duration=duration)
+    if len(existing) > policy.max_frames > 1:
+        # Keep both ends of the sampled timeline, not just its beginning.
+        selected = [
+            existing[round(index * (len(existing) - 1) / (policy.max_frames - 1))]
+            for index in range(policy.max_frames)
+        ]
+    else:
+        selected = existing[: policy.max_frames]
     metadata = _frame_metadata(row)
     frames: list[FramePayload] = []
-    for path in existing[: policy.max_frames]:
+    for path in selected:
         mime = "image/png" if path.suffix.lower() == ".png" else "image/jpeg"
         info = metadata.get(path.name, {}) if isinstance(metadata, dict) else {}
         frames.append(
