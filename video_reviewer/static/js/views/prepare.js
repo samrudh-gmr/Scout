@@ -36,6 +36,9 @@ export async function prepareView({ view, dock, go }) {
     placeholder: "Optional — e.g. RV Front Cap, Truck Hood",
   });
 
+  // Off by default: nothing is searched unless the operator ticks this.
+  const customerBrief = el("input", { type: "checkbox", id: "customerBrief" });
+
   const setFolder = (path) => {
     if (!path) return;
     folder.value = path;
@@ -56,6 +59,7 @@ export async function prepareView({ view, dock, go }) {
           year_month: yearMonth.value.trim(),
           client_or_location: client.value.trim(),
           part_choices: partChoices.value.trim(),
+          customer_brief: customerBrief.checked === true,
           tmp_dir: `${input.replace(/\/$/, "")}/.video-renamer-tmp`,
           sample_count: 0,
           proxy_scale: 1280,
@@ -132,6 +136,23 @@ export async function prepareView({ view, dock, go }) {
           null,
           "List the one or two parts this folder contains, separated by commas. Each video gets one of them, or none. " +
             "A video that doesn't match goes to review instead of being guessed, and operator videos never get a part.",
+        ),
+        el(
+          "div.field",
+          { style: { marginTop: "14px", maxWidth: "420px" } },
+          el(
+            "label",
+            { for: "customerBrief", style: { display: "flex", gap: "8px", alignItems: "center" } },
+            customerBrief,
+            "Look up what this client makes (optional)",
+          ),
+        ),
+        el(
+          "p.hint",
+          null,
+          "Off unless ticked. At the first Gemini review, only the client name above is sent to a Google web search " +
+            "asking what the company makes. The answer is saved to ~/.video-renamer/customers/ as a file you can edit, " +
+            "reused from then on, and given to the model as background only. It never decides the part.",
         ),
         el(
           "p.hint",
