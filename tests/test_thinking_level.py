@@ -114,7 +114,7 @@ def test_review_passes_thinking_level_to_the_provider(monkeypatch, tmp_path: Pat
     from video_reviewer.ai_review import service
 
     seen: list[ProviderConfig] = []
-    monkeypatch.setattr(service, "_review_one_row", lambda manifest, index, provider, config, policy: seen.append(config))
+    monkeypatch.setattr(service, "_review_one_row", lambda manifest, index, provider, config, policy, *rest: seen.append(config))
     monkeypatch.setattr(GeminiProvider, "_sdk_installed", lambda self: True)
     service.review_rows_with_ai(tmp_path / "m.csv", [0], provider_id="gemini", api_key="k", thinking_level="medium")
     assert seen[0].thinking_level == "medium"
