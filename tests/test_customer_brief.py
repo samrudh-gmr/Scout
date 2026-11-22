@@ -102,6 +102,24 @@ def test_real_search_sends_only_the_query_with_the_google_search_tool(monkeypatc
     assert sent["config"].system_instruction is None
 
 
+def test_real_search_allows_a_grounded_call_time_to_finish(monkeypatch) -> None:
+    """A live grounded search took 24s; a 20s limit failed every lookup with a 504."""
+    from google import genai
+
+    from video_reviewer.customer_brief import gemini_search
+
+    seen: dict = {}
+
+    class FakeClient:
+        def __init__(self, **kwargs):
+            seen.update(kwargs)
+
+    monkeypatch.setattr(genai, "Client", FakeClient)
+    gemini_search(api_key="fake", model="gemini-x")
+
+    assert seen["http_options"]["timeout"] >= 60000
+
+
 # ── cache ────────────────────────────────────────────────────────────────────
 
 def test_cache_miss_searches_once_and_writes_markdown(user_dir: Path) -> None:

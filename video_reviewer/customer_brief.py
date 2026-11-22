@@ -26,7 +26,9 @@ CUSTOMERS_DIR = Path.home() / ".video-renamer" / "customers"
 MAX_NAME_CHARS = 80
 MAX_BRIEF_CHARS = 2000
 _MAX_SLUG_CHARS = 60
-_SEARCH_TIMEOUT_MS = 20000
+# A grounded search thinks before it answers: one live call took 24s, and a 20s
+# limit failed every lookup with a 504. It runs once per customer, then is cached.
+_SEARCH_TIMEOUT_MS = 90000
 
 QUERY_TEMPLATE = (
     'What does the company "{name}" manufacture? '
