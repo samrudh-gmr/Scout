@@ -91,6 +91,30 @@ def test_server_error_is_retried_then_reported_unavailable(monkeypatch) -> None:
     assert len(calls) == 3
 
 
+def test_depleted_prepaid_credit_is_named_as_such_and_not_retried(monkeypatch) -> None:
+    """Seen live: a 402 RESOURCE_EXHAUSTED was reported as a rate limit and asked again."""
+    calls: list[int] = []
+    monkeypatch.setattr(GeminiProvider, "_sdk_installed", lambda self: True)
+    exc = FakeApiError(402, "RESOURCE_EXHAUSTED. Your prepayment credits are depleted. Please go to AI Studio to manage billing.")
+    monkeypatch.setattr(GeminiProvider, "_generate", _failing_generate(calls, exc))
+    with pytest.raises(AiReviewError) as caught:
+        GeminiProvider().generate_json("p", [], ProviderConfig(api_key="k"), max_retries=2)
+    assert caught.value.category == ErrorCategory.OUT_OF_CREDIT
+    assert len(calls) == 1
+    assert "credit" in str(caught.value).lower()
+    assert "fewer videos" not in str(caught.value).lower()
+
+
+def test_a_real_rate_limit_is_still_retried(monkeypatch) -> None:
+    calls: list[int] = []
+    monkeypatch.setattr(GeminiProvider, "_sdk_installed", lambda self: True)
+    monkeypatch.setattr(GeminiProvider, "_generate", _failing_generate(calls, FakeApiError(429, "RESOURCE_EXHAUSTED. Quota exceeded.")))
+    with pytest.raises(AiReviewError) as caught:
+        GeminiProvider().generate_json("p", [], ProviderConfig(api_key="k"), max_retries=2)
+    assert caught.value.category == ErrorCategory.RATE_LIMIT
+    assert len(calls) == 3
+
+
 def test_the_word_generate_is_not_mistaken_for_a_rate_limit(monkeypatch) -> None:
     calls: list[int] = []
     monkeypatch.setattr(GeminiProvider, "_sdk_installed", lambda self: True)
