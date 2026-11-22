@@ -78,12 +78,17 @@ description with `Manual`: `Manual Sanding Aluminum Panel`.
 Operators standing near or supervising a working robot are **not** manual work —
 use `Operators Controlling Robot` or `Operators Inspecting Robot` instead.
 
+When the clip is about people handling a part (loading, unloading, positioning)
+while the robot is idle, use `Operators Loading Part`. Operator clips have no
+Part or Industry field, and never name the specific part in the description.
+
 ## Standard keywords
 
 **Process:** Sanding · Sand Paper · Grinding · Buff and Polish · Paint Spray ·
 Masking · Seam Sealing · Assembly · Inspection · Scanning
 
-**People:** Operators Controlling Robot · Operators Inspecting Robot
+**People:** Operators Controlling Robot · Operators Inspecting Robot ·
+Operators Loading Part
 
 **Manual:** Manual Sanding · Manual Grinding · Manual Buff and Polish ·
 Manual Paint Spray · Manual Seam Sealing · Manual Inspection

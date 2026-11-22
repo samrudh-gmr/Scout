@@ -149,3 +149,12 @@ def test_mcp_approval_drops_the_part_for_operator_clips(monkeypatch, tmp_path: P
     row = read_manifest_csv(manifest)[0]
     assert row.part == "" and row.industry == ""
     assert "2024-07_Operators Controlling Robot_GMR HQ_001.mov" in message
+
+
+def test_shipped_guide_has_an_operator_loading_phrase_that_names_no_part() -> None:
+    from video_reviewer.naming_guide import DEFAULT_GUIDE
+
+    # The keyword list wraps across lines; read up to the next blank line.
+    people = " ".join(DEFAULT_GUIDE.split("**People:**")[1].split("\n\n")[0].split())
+    assert "Operators Loading Part" in people
+    assert "never name the specific part" in DEFAULT_GUIDE
