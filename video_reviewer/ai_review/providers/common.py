@@ -42,6 +42,7 @@ def parse_response(data: dict[str, Any]) -> ReviewResponse:
         flags=[str(flag).strip() for flag in flags if str(flag).strip()],
         raw_text=str(data.get("_raw_text", "")),
         scene=str(data.get("scene", "") or "").strip(),
+        usage=data.get("_usage") if isinstance(data.get("_usage"), dict) else None,
     )
 
 

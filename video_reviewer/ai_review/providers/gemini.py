@@ -86,4 +86,22 @@ class GeminiProvider(VisionProviderBase):
         except json.JSONDecodeError as exc:
             raise AiReviewError(f"Model did not return valid JSON: {text[:160]}", ErrorCategory.MALFORMED_RESPONSE) from exc
         data["_raw_text"] = text
+        data["_usage"] = _usage(getattr(response, "usage_metadata", None))
         return data
+
+
+def _usage(metadata: Any) -> dict[str, int | None] | None:
+    """Token counts from Gemini usage metadata; a count it omits is None."""
+    if metadata is None:
+        return None
+
+    def count(name: str) -> int | None:
+        value = getattr(metadata, name, None)
+        return value if isinstance(value, int) and not isinstance(value, bool) else None
+
+    return {
+        "prompt_tokens": count("prompt_token_count"),
+        "thoughts_tokens": count("thoughts_token_count"),
+        "output_tokens": count("candidates_token_count"),
+        "total_tokens": count("total_token_count"),
+    }

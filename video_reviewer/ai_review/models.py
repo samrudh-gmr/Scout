@@ -103,6 +103,9 @@ class ReviewResponse:
     raw_text: str = ""
     # robot_process, manual_process, operators, or "" when the model gave none.
     scene: str = ""
+    # Token counts when the provider reports them, else None. Keys: prompt_tokens,
+    # thoughts_tokens, output_tokens, total_tokens (each an int or None).
+    usage: dict[str, int | None] | None = None
 
 
 @dataclass
