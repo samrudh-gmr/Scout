@@ -3,15 +3,20 @@ from __future__ import annotations
 import hashlib
 import json
 import time
+from contextvars import ContextVar
 from typing import Any
 
-from video_reviewer.ai_review.models import AiReviewError, ErrorCategory
+from video_reviewer.ai_review.models import AiReviewError, ErrorCategory, ProviderConfig
 from video_reviewer.ai_review.prompt import PROMPT_TEMPLATE  # noqa: F401 - kept for older imports
 from video_reviewer.ai_review.providers.common import VisionProviderBase
 
 _MODEL_CACHE_SECONDS = 600
 _MODEL_LIST_TIMEOUT_MS = 8000
 # Gemini models that answer generateContent but cannot name a clip from frames.
+# The thinking level of the call in flight. The provider is one shared instance
+# serving several threads, and _generate's signature is shared with the other
+# providers, so the level travels beside the call instead of through it.
+_THINKING_LEVEL: ContextVar[str] = ContextVar("gemini_thinking_level", default="")
 _NON_VISION_MARKERS = ("tts", "image", "live", "embedding", "transcribe", "translate", "omni", "audio", "banana")
 
 
@@ -35,6 +40,35 @@ class GeminiProvider(VisionProviderBase):
         except ImportError:
             return False
         return True
+
+    def thinking_levels(self) -> list[str]:
+        """Thinking levels the installed SDK defines, lowercased, or [] without the SDK."""
+        try:
+            from google.genai import types
+        except ImportError:
+            return []
+        return [level.value.lower() for level in types.ThinkingLevel if level.value != "THINKING_LEVEL_UNSPECIFIED"]
+
+    def generate_json(self, prompt: str, frames, config: ProviderConfig, max_retries: int = 1) -> dict[str, Any]:
+        level = (config.thinking_level or "").strip().lower()
+        if level and level not in self.thinking_levels():
+            allowed = ", ".join(self.thinking_levels()) or "none (google-genai is not installed)"
+            raise AiReviewError(
+                f"Unknown thinking level '{config.thinking_level}'. Choose one of: {allowed}, or leave it unset.",
+                ErrorCategory.VALIDATION,
+            )
+        token = _THINKING_LEVEL.set(level)
+        try:
+            return super().generate_json(prompt, frames, config, max_retries=max_retries)
+        except AiReviewError as exc:
+            if level and exc.category == ErrorCategory.INVALID_REQUEST:
+                raise AiReviewError(
+                    f"{exc} The thinking level '{level}' may not be supported by this model; try 'Model default'.",
+                    exc.category,
+                ) from exc
+            raise
+        finally:
+            _THINKING_LEVEL.reset(token)
 
     def list_models(self, api_key: str | None = None) -> list[str]:
         """Vision-capable Gemini models this key can use, or [] if they cannot be listed."""
@@ -74,11 +108,15 @@ class GeminiProvider(VisionProviderBase):
         for frame in frames:
             parts.append(types.Part.from_bytes(data=frame.data, mime_type=frame.mime_type))
 
+        options: dict[str, Any] = {"response_mime_type": "application/json", "temperature": 0.15}
+        level = _THINKING_LEVEL.get()
+        if level:
+            options["thinking_config"] = types.ThinkingConfig(thinking_level=types.ThinkingLevel(level.upper()))
         client = genai.Client(api_key=api_key)
         response = client.models.generate_content(
             model=model,
             contents=parts,
-            config=types.GenerateContentConfig(response_mime_type="application/json", temperature=0.15),
+            config=types.GenerateContentConfig(**options),
         )
         text = (response.text or "").strip()
         try:

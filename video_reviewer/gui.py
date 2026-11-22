@@ -347,7 +347,7 @@ def create_app(manifest_path: Path | None = None) -> FastAPI:
     # ── /api/ai/status ──────────────────────────────────────────────────────
     @app.get("/api/ai/status")
     async def ai_status(provider: str = Query("gemini")) -> JSONResponse:
-        from video_reviewer.ai_review import available_providers, pending_indices, provider_status
+        from video_reviewer.ai_review import available_providers, get_provider, pending_indices, provider_status
 
         stored = load_api_key(provider)
         status = provider_status(provider, api_key=stored or None)
@@ -382,6 +382,8 @@ def create_app(manifest_path: Path | None = None) -> FastAPI:
             "cheap_model": status.cheap_model,
             "accurate_model": status.accurate_model,
             "models": models,
+            # Only providers that define levels get the thinking picker.
+            "thinking_levels": list(getattr(get_provider(status.provider_id), "thinking_levels", list)()),
             "env_key_names": list(status.env_key_names),
             "providers": available_providers(),
             "pending": pending_indices(manifest_path),
@@ -454,6 +456,7 @@ def create_app(manifest_path: Path | None = None) -> FastAPI:
         indices = body.get("indices") if "indices" in body else None
         provider = (body.get("provider") or "gemini").strip()
         model = (body.get("model") or "").strip() or None
+        thinking_level = (body.get("thinking_level") or "").strip() or None
         api_key = (body.get("api_key") or "").strip() or load_api_key(provider) or None
         if body.get("remember_key") and (body.get("api_key") or "").strip():
             save_api_key(provider, body["api_key"].strip())
@@ -477,6 +480,7 @@ def create_app(manifest_path: Path | None = None) -> FastAPI:
                     provider_id=provider,
                     model=model,
                     api_key=api_key,
+                    thinking_level=thinking_level,
                     policy=policy,
                 )
             )
@@ -512,6 +516,7 @@ def create_app(manifest_path: Path | None = None) -> FastAPI:
 
         provider = (body.get("provider") or "gemini").strip()
         model = (body.get("model") or "").strip() or None
+        thinking_level = (body.get("thinking_level") or "").strip() or None
         api_key = (body.get("api_key") or "").strip() or load_api_key(provider) or None
         messages = body.get("messages")
         frame_notes = str(body.get("frame_notes") or "").strip()
@@ -526,7 +531,7 @@ def create_app(manifest_path: Path | None = None) -> FastAPI:
             reply = await anyio.to_thread.run_sync(
                 lambda: chat_about_row(
                     manifest_path, index, messages,
-                    provider_id=provider, model=model, api_key=api_key,
+                    provider_id=provider, model=model, api_key=api_key, thinking_level=thinking_level,
                     frame_notes=frame_notes,
                 )
             )

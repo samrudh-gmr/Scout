@@ -99,6 +99,7 @@ def command_ai_review(args: argparse.Namespace) -> int:
             provider_id=args.provider,
             model=args.model or None,
             api_key=args.api_key or None,
+            thinking_level=getattr(args, "thinking", "") or None,
             policy=policy,
             on_progress=_progress,
         )
@@ -174,6 +175,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Specific row indices to review (default: all pending/blocked)",
     )
     ai_parser.add_argument("--model", default="", help="Optional provider model override")
+    ai_parser.add_argument("--thinking", default="", help="Optional Gemini thinking level (e.g. low, high). Default: unset, the model's own default")
     ai_parser.add_argument("--preset", choices=["fast", "balanced", "accurate"], default="balanced", help="Cost/accuracy preset")
     ai_parser.add_argument("--dry-run", action="store_true", help="Show cost/volume estimate without sending frames")
     ai_parser.add_argument(
@@ -190,6 +192,7 @@ def build_parser() -> argparse.ArgumentParser:
     gemini_parser.add_argument("--manifest", required=True, help="CSV manifest path to review")
     gemini_parser.add_argument("--indices", nargs="*", type=int, help="Specific row indices to review")
     gemini_parser.add_argument("--model", default="", help="Optional Gemini model override")
+    gemini_parser.add_argument("--thinking", default="", help="Optional Gemini thinking level (e.g. low, high). Default: unset, the model's own default")
     gemini_parser.add_argument("--preset", choices=["fast", "balanced", "accurate"], default="balanced", help="Cost/accuracy preset")
     gemini_parser.add_argument("--dry-run", action="store_true", help="Show cost/volume estimate without sending frames")
     gemini_parser.add_argument("--api-key", default="", help="Optional Gemini API key or GEMINI_API_KEY env var.")

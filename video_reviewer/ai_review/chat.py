@@ -225,6 +225,7 @@ def chat_about_row(
     provider_id: str = "gemini",
     model: str | None = None,
     api_key: str | None = None,
+    thinking_level: str | None = None,
     max_frames: int = CHAT_FRAMES,
     frame_notes: str = "",
 ) -> ChatReply:
@@ -239,7 +240,9 @@ def chat_about_row(
         raise AiReviewError("Ask a question first.", ErrorCategory.VALIDATION)
 
     provider = get_provider(provider_id)
-    config = ProviderConfig(provider_id=provider.provider_id, model=model or "", api_key=api_key)
+    config = ProviderConfig(
+        provider_id=provider.provider_id, model=model or "", api_key=api_key, thinking_level=thinking_level or "",
+    )
     # Notes in hand means the model has already looked; send words, not pictures.
     frames = [] if frame_notes else _load_frames(row, ReviewPolicy(max_frames=max_frames))[:max_frames]
 

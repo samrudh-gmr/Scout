@@ -91,12 +91,15 @@ def review_rows_with_ai(
     provider_id: str = "gemini",
     model: str | None = None,
     api_key: str | None = None,
+    thinking_level: str | None = None,
     policy: ReviewPolicy | None = None,
     on_progress=None,
 ) -> list[RowResult]:
     policy = policy or ReviewPolicy()
     provider = get_provider(provider_id)
-    config = ProviderConfig(provider_id=provider.provider_id, model=model or "", api_key=api_key)
+    config = ProviderConfig(
+        provider_id=provider.provider_id, model=model or "", api_key=api_key, thinking_level=thinking_level or "",
+    )
     status = provider.status(config)
     if not status.available:
         raise AiReviewError(status.message, ErrorCategory.MISSING_DEPENDENCY)

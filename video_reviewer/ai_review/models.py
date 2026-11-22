@@ -32,6 +32,8 @@ class ProviderConfig:
     provider_id: str = "gemini"
     model: str = ""
     api_key: str | None = None
+    # "" sends no thinking config, so the model's own default applies.
+    thinking_level: str = ""
 
 
 @dataclass(frozen=True)

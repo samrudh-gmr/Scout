@@ -159,7 +159,12 @@ uv run scout ai-review --manifest manifest.csv --provider gemini --preset balanc
 # Review specific rows
 uv run scout ai-review --manifest manifest.csv --provider gemini --indices 0 3 5 \
   --model gemini-4-hydrogen --api-key "$GEMINI_API_KEY"
+
+# Gemini only: set how much the model thinks before answering
+uv run scout ai-review --manifest manifest.csv --provider gemini --thinking low
 ```
+
+`--thinking` takes `minimal`, `low`, `medium` or `high` (the levels the installed `google-genai` SDK defines). Leave it out to send no thinking setting, so the model's own default applies. Not every model accepts every level; a level the API rejects stops the run with an invalid-request error instead of being retried. The Name screen has the same choice next to the model picker.
 
 `gemini-review` remains as a backwards-compatible alias for `ai-review --provider gemini`.
 
