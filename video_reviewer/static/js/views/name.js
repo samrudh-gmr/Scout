@@ -3,7 +3,7 @@
 
 import { api } from "../api.js";
 import { el, clear, busy, pill, note } from "../dom.js";
-import { state, remember, loadRows, counts, chosenModel, rememberModel } from "../store.js";
+import { state, remember, loadRows, counts, chosenModel, rememberModel, chosenThinking, rememberThinking } from "../store.js";
 
 const FRAMES_PER_PRESET = { fast: 6, balanced: 12, accurate: 16 };
 
@@ -30,6 +30,13 @@ export async function nameView({ view, dock }) {
     id: "model",
     onchange: (event) => rememberModel(state.provider, event.target.value),
   });
+
+  // Gemini only; hidden for providers that report no thinking levels.
+  const thinkingSelect = el("select", {
+    id: "thinking",
+    onchange: (event) => rememberThinking(state.provider, event.target.value),
+  });
+  const thinkingField = el("div.field", null, el("label", { for: "thinking" }, "Thinking"), thinkingSelect);
 
   const runButton = el("button.btn.primary", { onclick: () => run() }, "Name every clip");
 
@@ -130,6 +137,17 @@ export async function nameView({ view, dock }) {
     if (remembered && !models.includes(remembered)) rememberModel(state.provider, "");
     modelSelect.value = models.includes(remembered) ? remembered : "";
 
+    const levels = status.thinking_levels || [];
+    clear(thinkingSelect);
+    thinkingSelect.append(el("option", { value: "" }, "Model default"));
+    for (const level of levels) thinkingSelect.append(el("option", { value: level }, level[0].toUpperCase() + level.slice(1)));
+    const rememberedLevel = chosenThinking(state.provider);
+    if (rememberedLevel && !levels.includes(rememberedLevel)) rememberThinking(state.provider, "");
+    thinkingSelect.value = levels.includes(rememberedLevel) ? rememberedLevel : "";
+    thinkingSelect.disabled = !levels.length;
+    // .field sets display: grid, which would override the hidden attribute.
+    thinkingField.style.display = levels.length ? "" : "none";
+
     renderKeySlot();
     refreshEstimate();
 
@@ -194,6 +212,7 @@ export async function nameView({ view, dock }) {
           indices: [index],
           provider: state.provider,
           model: modelSelect.value,
+          thinking_level: thinkingSelect.disabled ? "" : thinkingSelect.value,
           api_key: typedKey,
           preset: presetSelect.value,
         });
@@ -320,9 +339,10 @@ export async function nameView({ view, dock }) {
         el("p", null, "More frames means better guesses and a larger bill."),
         el(
           "div",
-          { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: "14px" } },
+          { style: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "14px" } },
           el("div.field", null, el("label", { for: "preset" }, "Detail"), presetSelect),
           el("div.field", null, el("label", { for: "model" }, "Model"), modelSelect),
+          thinkingField,
         ),
         estimate,
       ),

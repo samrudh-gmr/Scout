@@ -38,6 +38,15 @@ export function rememberModel(provider, model) {
   else localStorage.removeItem(`model.${provider}`);
 }
 
+// The thinking level is remembered the same way. "" means "model default":
+// no thinking setting is sent at all.
+export const chosenThinking = (provider = state.provider) => localStorage.getItem(`thinking.${provider}`) || "";
+
+export function rememberThinking(provider, level) {
+  if (level) localStorage.setItem(`thinking.${provider}`, level);
+  else localStorage.removeItem(`thinking.${provider}`);
+}
+
 export async function loadRows() {
   const data = await api.rows();
   state.rows = data.rows || [];
