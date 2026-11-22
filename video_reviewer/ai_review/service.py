@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import json
+import time
 
 from dataclasses import asdict
 from pathlib import Path
 
-from video_reviewer.ai_review.decide import decide
+from video_reviewer.ai_review.decide import Decision, decide
 from video_reviewer.ai_review.models import (
     AiReviewError,
     ErrorCategory,
@@ -21,6 +22,7 @@ from video_reviewer.ai_review.providers.gemini import GeminiProvider
 from video_reviewer.ai_review.providers.anthropic import AnthropicProvider
 from video_reviewer.ai_review.providers.openai import OpenAIProvider
 from video_reviewer.ai_review.providers.codex_proxy import CodexProxyProvider
+from video_reviewer.ai_review.trace import decision_context, write_review_trace
 from video_reviewer.manifest import manifest_transaction, REVIEW_APPROVED, REVIEW_BLOCKED, REVIEW_NEEDS_REVIEW, REVIEW_PENDING, read_manifest_csv, write_manifest_csv
 from video_reviewer.media import extract_sample_frames, create_frame_dir
 from video_reviewer.run_context import part_choices_from_hints
@@ -119,6 +121,9 @@ def _review_one_row(manifest_path: Path, index: int, provider, config: ProviderC
         source_identity = str(Path(row.source_path).resolve())
         source_name = Path(row.source_path).name
 
+    started = time.monotonic()
+    request = response = decision = None
+    context = _decision_context(row, policy)
     try:
         request = _build_request(row, policy)
         response = provider.classify(request, config)
@@ -135,7 +140,7 @@ def _review_one_row(manifest_path: Path, index: int, provider, config: ProviderC
             # already succeeded once (a raise there sets BLOCKED and propagates
             # as AiReviewError instead), so review_status here is always
             # REVIEW_APPROVED or REVIEW_NEEDS_REVIEW — never BLOCKED.
-            _apply_response(row, response, policy)
+            decision = _apply_response(row, response, policy)
             # _apply_response named this row alone, off whatever placeholder
             # sequence it already had (always "001" fresh from prepare) — dedupe
             # across the whole batch now that this row has real fields. This can
@@ -163,6 +168,22 @@ def _review_one_row(manifest_path: Path, index: int, provider, config: ProviderC
             else:
                 row = None
     row_status = getattr(row, "review_status", "missing") if 'row' in locals() and row is not None else "missing"
+    write_review_trace(
+        manifest_path,
+        secrets=(config.api_key,),
+        source_name=source_name,
+        provider=getattr(provider, "provider_id", config.provider_id),
+        model=(config.model or "").strip() or getattr(provider, "default_model", ""),
+        request=request,
+        response=response,
+        context=context,
+        decision=decision,
+        wall_seconds=time.monotonic() - started,
+        status=row_status,
+        proposed_name=getattr(row, "proposed_name", "") if row is not None else "",
+        error_category=category,
+        error=error,
+    )
     return RowResult(
         index=index,
         source_name=source_name,
@@ -268,7 +289,16 @@ def _optional_int(value) -> int | None:
         return None
 
 
-def _apply_response(row, response: ReviewResponse, policy: ReviewPolicy) -> None:
+def _decision_context(row, policy: ReviewPolicy) -> dict:
+    hints = _parse_hints(row.source_hints)
+    return decision_context(
+        batch_client_override=str(hints.get("batch_client_override", "")).strip(),
+        part_choices=part_choices_from_hints(hints),
+        policy=policy,
+    )
+
+
+def _apply_response(row, response: ReviewResponse, policy: ReviewPolicy) -> Decision:
     if not response.description or not response.client_or_location:
         raise AiReviewError("AI response was missing description or client/location.", ErrorCategory.MALFORMED_RESPONSE)
     hints = _parse_hints(row.source_hints)
@@ -292,6 +322,7 @@ def _apply_response(row, response: ReviewResponse, policy: ReviewPolicy) -> None
         row.review_status = REVIEW_BLOCKED
         raise AiReviewError(str(exc), ErrorCategory.VALIDATION) from exc
     row.review_status = REVIEW_APPROVED if decision.auto_approve else REVIEW_NEEDS_REVIEW
+    return decision
 
 
 def _merge_flags(existing: str, flag: str) -> str:
