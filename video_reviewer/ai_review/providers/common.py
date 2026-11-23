@@ -48,6 +48,22 @@ def parse_response(data: dict[str, Any]) -> ReviewResponse:
     )
 
 
+def openai_usage(usage: Any) -> dict[str, int | None] | None:
+    """Token counts from an OpenAI-style reply; None when the reply carries none."""
+    if usage is None:
+        return None
+
+    def count(name: str) -> int | None:
+        value = getattr(usage, name, None)
+        return value if isinstance(value, int) and not isinstance(value, bool) else None
+
+    return {
+        "prompt_tokens": count("prompt_tokens"),
+        "output_tokens": count("completion_tokens"),
+        "total_tokens": count("total_tokens"),
+    }
+
+
 def _parse_bool(value: Any) -> bool:
     if isinstance(value, bool):
         return value

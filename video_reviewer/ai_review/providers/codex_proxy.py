@@ -23,7 +23,7 @@ from urllib.parse import urlsplit
 from openai import OpenAI
 
 from video_reviewer.ai_review.models import AiReviewError, ErrorCategory, ProviderConfig, ProviderStatus
-from video_reviewer.ai_review.providers.common import VisionProviderBase
+from video_reviewer.ai_review.providers.common import VisionProviderBase, openai_usage
 from video_reviewer.config import codex_proxy_base_url, load_api_key, save_api_key
 
 _PROXY_KEY_PROVIDER = "codex-proxy"
@@ -207,4 +207,5 @@ class CodexProxyProvider(VisionProviderBase):
         except json.JSONDecodeError as exc:
             raise AiReviewError("Codex did not return valid naming JSON. Try again or use another model.", ErrorCategory.MALFORMED_RESPONSE) from exc
         data["_raw_text"] = text
+        data["_usage"] = openai_usage(getattr(response, "usage", None))
         return data

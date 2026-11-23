@@ -45,4 +45,7 @@ class OpenAIProvider(VisionProviderBase):
             from video_reviewer.ai_review.models import AiReviewError, ErrorCategory
             raise AiReviewError(f"Model did not return valid JSON: {text[:160]}", ErrorCategory.MALFORMED_RESPONSE) from exc
         data["_raw_text"] = text
+        from video_reviewer.ai_review.providers.common import openai_usage
+
+        data["_usage"] = openai_usage(getattr(response, "usage", None))
         return data
