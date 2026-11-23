@@ -80,7 +80,7 @@ def test_key_like_text_never_reaches_the_log_file(tmp_path) -> None:
 def test_each_failed_attempt_logs_the_status_and_the_provider_text_without_the_key(monkeypatch, caplog) -> None:
     """Seen live: 'rate limit, try fewer videos' hid a 402 and, later, a 429 usage limit."""
     def _generate(self, key, model, prompt, frames):
-        raise FakeApiError(429, f"The usage limit has been reached (key {key})")
+        raise FakeApiError(429, f"Too many requests per minute (key {key})")
 
     monkeypatch.setattr(GeminiProvider, "_sdk_installed", lambda self: True)
     monkeypatch.setattr(GeminiProvider, "_generate", _generate)
@@ -91,7 +91,7 @@ def test_each_failed_attempt_logs_the_status_and_the_provider_text_without_the_k
     assert len(failed) == 2
     assert "attempt=1/2" in failed[0] and "attempt=2/2" in failed[1]
     assert all("http_status=429" in line and "category=rate_limit" in line for line in failed)
-    assert all("The usage limit has been reached" in line and "model=gemini-test" in line for line in failed)
+    assert all("Too many requests per minute" in line and "model=gemini-test" in line for line in failed)
     assert "will_retry=True" in failed[0] and "will_retry=False" in failed[1]
     assert SECRET not in "\n".join(failed)
 

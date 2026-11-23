@@ -22,6 +22,8 @@ __all__ = ["VisionProviderBase", "parse_response", "prompt_for"]
 _KEY_TOKENS = ("api key", "api_key", "permission", "unauth", "forbidden")
 # A spent prepaid balance arrives as RESOURCE_EXHAUSTED too, so it is checked first.
 _CREDIT_TOKENS = ("credits are depleted", "prepayment credit", "insufficient credit", "billing account")
+# A plan allowance that is used up until it resets; asking again cannot help.
+_USAGE_LIMIT_TOKENS = ("usage limit", "usage_limit")
 _RATE_TOKENS = ("rate limit", "rate_limit", "ratelimit", "quota", "resource_exhausted", "too many requests")
 _REQUEST_TOKENS = ("not found", "not_found", "invalid_argument", "invalid argument", "bad request", "unsupported")
 _RETRYABLE = {ErrorCategory.RATE_LIMIT, ErrorCategory.PROVIDER_UNAVAILABLE}
@@ -186,6 +188,8 @@ class VisionProviderBase:
             return ErrorCategory.INVALID_KEY
         if code == 402 or any(token in text for token in _CREDIT_TOKENS):
             return ErrorCategory.OUT_OF_CREDIT
+        if any(token in text for token in _USAGE_LIMIT_TOKENS):
+            return ErrorCategory.USAGE_LIMIT
         if code == 429 or any(token in text for token in _RATE_TOKENS):
             return ErrorCategory.RATE_LIMIT
         if (code is not None and 400 <= code < 500 and code != 408) or any(token in text for token in _REQUEST_TOKENS):
@@ -197,6 +201,8 @@ class VisionProviderBase:
             return f"{self.display_name} rejected the API key. Check that it is valid and enabled."
         if category == ErrorCategory.OUT_OF_CREDIT:
             return f"{self.display_name} account is out of prepaid credit. Add credit in the provider's billing page, then run the review again."
+        if category == ErrorCategory.USAGE_LIMIT:
+            return f"{self.display_name} account has reached its usage limit. Wait for the limit to reset or choose another provider, then run the review again."
         if category == ErrorCategory.RATE_LIMIT:
             return f"{self.display_name} rate limit or quota reached. Try fewer videos or a cheaper preset."
         if category == ErrorCategory.INVALID_REQUEST:

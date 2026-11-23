@@ -207,3 +207,30 @@ def test_status_endpoint_falls_back_to_known_models_when_listing_fails(monkeypat
     body = _status_client(monkeypatch, tmp_path).get("/api/ai/status?provider=gemini").json()
     assert body["available"] is True
     assert body["models"] == ["gemini-4-hydrogen", "gemini-3.5-flash-lite", "gemini-4-carbon"]
+
+
+def test_a_reached_usage_limit_is_named_as_such_and_not_retried(monkeypatch) -> None:
+    """Seen live on a ChatGPT subscription: each clip was retried and reported as 'try fewer videos'."""
+    calls: list[int] = []
+    monkeypatch.setattr(GeminiProvider, "_sdk_installed", lambda self: True)
+    monkeypatch.setattr(
+        GeminiProvider,
+        "_generate",
+        _failing_generate(calls, FakeApiError(429, "{'error': {'message': 'The usage limit has been reached', 'type': 'api_error'}}")),
+    )
+    with pytest.raises(AiReviewError) as caught:
+        GeminiProvider().generate_json("p", [], ProviderConfig(model="m", api_key="k"), max_retries=2)
+    assert caught.value.category == ErrorCategory.USAGE_LIMIT
+    assert len(calls) == 1
+    assert "usage limit" in str(caught.value)
+    assert "fewer videos" not in str(caught.value)
+
+
+def test_an_ordinary_rate_limit_is_still_retried(monkeypatch) -> None:
+    calls: list[int] = []
+    monkeypatch.setattr(GeminiProvider, "_sdk_installed", lambda self: True)
+    monkeypatch.setattr(GeminiProvider, "_generate", _failing_generate(calls, FakeApiError(429, "RESOURCE_EXHAUSTED. Too many requests per minute")))
+    with pytest.raises(AiReviewError) as caught:
+        GeminiProvider().generate_json("p", [], ProviderConfig(model="m", api_key="k"), max_retries=2)
+    assert caught.value.category == ErrorCategory.RATE_LIMIT
+    assert len(calls) == 3

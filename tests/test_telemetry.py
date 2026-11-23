@@ -87,7 +87,7 @@ def test_a_review_makes_batch_clip_and_model_call_spans_in_one_trace(tmp_path, m
 
 def test_a_failed_call_is_one_error_span_per_attempt_with_the_status(monkeypatch, spans) -> None:
     def _generate(self, key, model, prompt, frames):
-        raise FakeApiError(429, f"The usage limit has been reached (key {key})")
+        raise FakeApiError(429, f"Too many requests per minute (key {key})")
 
     monkeypatch.setattr(GeminiProvider, "_sdk_installed", lambda self: True)
     monkeypatch.setattr(GeminiProvider, "_generate", _generate)

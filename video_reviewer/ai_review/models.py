@@ -13,6 +13,7 @@ class ErrorCategory(StrEnum):
     INVALID_REQUEST = "invalid_request"
     RATE_LIMIT = "rate_limit"
     OUT_OF_CREDIT = "out_of_credit"
+    USAGE_LIMIT = "usage_limit"
     PROVIDER_UNAVAILABLE = "provider_unavailable"
     MALFORMED_RESPONSE = "malformed_response"
     VALIDATION = "validation"
