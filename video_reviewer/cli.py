@@ -226,6 +226,9 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+    from video_reviewer import app_log
+
+    app_log.setup_logging()
     try:
         return args.func(args)
     except RuntimeError as exc:

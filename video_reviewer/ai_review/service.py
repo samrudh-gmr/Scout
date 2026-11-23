@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import time
 
 from dataclasses import asdict
@@ -23,6 +24,7 @@ from video_reviewer.ai_review.providers.anthropic import AnthropicProvider
 from video_reviewer.ai_review.providers.openai import OpenAIProvider
 from video_reviewer.ai_review.providers.codex_proxy import CodexProxyProvider
 from video_reviewer.ai_review.trace import decision_context, write_review_trace
+from video_reviewer.app_log import fields, logger
 from video_reviewer.manifest import manifest_transaction, REVIEW_APPROVED, REVIEW_BLOCKED, REVIEW_NEEDS_REVIEW, REVIEW_PENDING, read_manifest_csv, write_manifest_csv
 from video_reviewer.media import extract_sample_frames, create_frame_dir
 from video_reviewer.run_context import part_choices_from_hints
@@ -114,11 +116,22 @@ def review_rows_with_ai(
         model=model or "",
     )
     results: list[RowResult] = []
+    batch_started = time.monotonic()
+    logger.info("review_batch start %s", fields(
+        provider=provider.provider_id, model=(model or "").strip() or getattr(provider, "default_model", ""),
+        thinking=thinking_level or None, clips=len(indices),
+    ))
     for index in indices:
         result = _review_one_row(manifest_path, index, provider, config, policy, briefs)
         results.append(result)
         if on_progress is not None:
             on_progress(result)
+    errors = sum(1 for r in results if getattr(r, "error", ""))
+    approved = sum(1 for r in results if getattr(r, "status", "") == REVIEW_APPROVED and not getattr(r, "error", ""))
+    logger.info("review_batch done %s", fields(
+        approved=approved, needs_review=len(results) - approved - errors, errors=errors,
+        seconds=round(time.monotonic() - batch_started, 1),
+    ))
     return results
 
 
@@ -195,6 +208,11 @@ def _review_one_row(manifest_path: Path, index: int, provider, config: ProviderC
         error_category=category,
         error=error,
     )
+    logger.log(logging.WARNING if error else logging.INFO, "review_clip %s", fields(
+        clip=source_name, status=row_status, seconds=round(time.monotonic() - started, 2),
+        frames=len(request.frames) if request is not None else 0,
+        error_category=category or None, brief=(brief.note or None) if brief else None,
+    ))
     return RowResult(
         index=index,
         source_name=source_name,

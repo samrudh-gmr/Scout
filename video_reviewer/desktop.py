@@ -53,9 +53,14 @@ def launch_desktop(manifest_path: Path, host: str = "127.0.0.1", port: int = 876
 
 
 def main() -> int:
+    from video_reviewer import app_log
+
+    app_log.setup_logging()
     try:
         launch_desktop(Path.home() / ".video-renamer" / "manifest.csv")
     except Exception as exc:  # noqa: BLE001 - show a useful desktop error
+        # The packaged app has no terminal, so the log file is the only place this lands.
+        app_log.logger.exception("Scout could not start: %s", exc)
         print(f"Scout could not start: {exc}")
         return 1
     return 0
