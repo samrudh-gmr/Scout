@@ -12,7 +12,8 @@ from video_reviewer.ai_review.models import AiReviewError, ProviderConfig
 from video_reviewer.ai_review.providers.gemini import GeminiProvider
 from video_reviewer.manifest import REVIEW_PENDING, ManifestRow, write_manifest_csv
 
-SECRET = "AIzaSyTestKeyTestKeyTestKey1234567890"
+# Built at run time so no key-shaped text sits in the repository.
+SECRET = "AIza" + "Test0" * 7
 PAYLOAD = {
     "scene": "robot_process", "part": "Aluminum Wheel", "industry": "Specialty Vehicle", "description": "Sanding",
     "client_or_location": "GMR HQ", "confidence": 0.95, "rationale": "robot sands a wheel", "flags": [],
