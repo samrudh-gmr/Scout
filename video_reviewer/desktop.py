@@ -56,6 +56,9 @@ def main() -> int:
     from video_reviewer import app_log
 
     app_log.setup_logging()
+    from video_reviewer import telemetry
+
+    telemetry.setup_telemetry()
     try:
         launch_desktop(Path.home() / ".video-renamer" / "manifest.csv")
     except Exception as exc:  # noqa: BLE001 - show a useful desktop error

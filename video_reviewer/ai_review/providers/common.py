@@ -14,6 +14,7 @@ from video_reviewer.ai_review.models import (
     ReviewResponse,
 )
 from video_reviewer.ai_review.prompt import prompt_for
+from video_reviewer import telemetry
 from video_reviewer.app_log import fields, logger, redact
 
 __all__ = ["VisionProviderBase", "parse_response", "prompt_for"]
@@ -136,37 +137,46 @@ class VisionProviderBase:
         attempts = max(1, max_retries + 1)
         for attempt in range(attempts):
             started = time.monotonic()
-            try:
-                data = self._generate(key, model, prompt, frames)
-                usage = data.get("_usage") if isinstance(data, dict) and isinstance(data.get("_usage"), dict) else {}
-                logger.info("model_call ok %s", fields(
-                    provider=self.provider_id, model=model, attempt=f"{attempt + 1}/{attempts}", frames=len(frames),
-                    seconds=round(time.monotonic() - started, 2), **usage,
-                ))
-                return data
-            except AiReviewError as exc:
-                logger.warning("model_call failed %s", fields(
-                    provider=self.provider_id, model=model, attempt=f"{attempt + 1}/{attempts}", frames=len(frames),
-                    seconds=round(time.monotonic() - started, 2), category=exc.category.value, will_retry=False,
-                    detail=redact(str(exc), (key,))[:500],
-                ))
-                raise
-            except Exception as exc:  # SDK exception classes differ between versions.
-                category = self._categorize_exception(exc)
-                # The message shown to the user is a fixed safe sentence, so the
-                # provider's own words and status are kept here, with the key removed.
-                logger.warning("model_call failed %s", fields(
-                    provider=self.provider_id, model=model, attempt=f"{attempt + 1}/{attempts}", frames=len(frames),
-                    seconds=round(time.monotonic() - started, 2), http_status=_http_status(exc),
-                    category=category.value, will_retry=category in _RETRYABLE and attempt < attempts - 1,
-                    detail=redact(f"{type(exc).__name__}: {exc}", (key,))[:500],
-                ))
-                # Only a busy or throttled provider is worth asking again. A bad
-                # key, an unknown model or a malformed request fails the same way
-                # every time, so retrying only delays the real message.
-                if category not in _RETRYABLE or attempt == attempts - 1:
-                    raise AiReviewError(self._safe_exception_message(category, exc, model), category) from exc
-                time.sleep(min(2**attempt, 4))
+            label = f"{attempt + 1}/{attempts}"
+            with telemetry.span(f"chat {model}", **{
+                "gen_ai.operation.name": "chat", "gen_ai.provider.name": self.provider_id,
+                "gen_ai.request.model": model, "scout.attempt": attempt + 1, "scout.frames": len(frames),
+            }) as call:
+                try:
+                    data = self._generate(key, model, prompt, frames)
+                    usage = data.get("_usage") if isinstance(data, dict) and isinstance(data.get("_usage"), dict) else {}
+                    call.set(**telemetry.token_attributes(usage))
+                    logger.info("model_call ok %s", fields(
+                        provider=self.provider_id, model=model, attempt=label, frames=len(frames),
+                        seconds=round(time.monotonic() - started, 2), **usage,
+                    ))
+                    return data
+                except AiReviewError as exc:
+                    call.fail(exc.category.value)
+                    logger.warning("model_call failed %s", fields(
+                        provider=self.provider_id, model=model, attempt=label, frames=len(frames),
+                        seconds=round(time.monotonic() - started, 2), category=exc.category.value, will_retry=False,
+                        detail=redact(str(exc), (key,))[:500],
+                    ))
+                    raise
+                except Exception as exc:  # SDK exception classes differ between versions.
+                    category = self._categorize_exception(exc)
+                    # Only a busy or throttled provider is worth asking again. A bad
+                    # key, an unknown model or a malformed request fails the same way
+                    # every time, so retrying only delays the real message.
+                    will_retry = category in _RETRYABLE and attempt < attempts - 1
+                    call.fail(category.value, _http_status(exc))
+                    # The message shown to the user is a fixed safe sentence, so the
+                    # provider's own words and status are kept here, with the key removed.
+                    logger.warning("model_call failed %s", fields(
+                        provider=self.provider_id, model=model, attempt=label, frames=len(frames),
+                        seconds=round(time.monotonic() - started, 2), http_status=_http_status(exc),
+                        category=category.value, will_retry=will_retry,
+                        detail=redact(f"{type(exc).__name__}: {exc}", (key,))[:500],
+                    ))
+                    if not will_retry:
+                        raise AiReviewError(self._safe_exception_message(category, exc, model), category) from exc
+            time.sleep(min(2**attempt, 4))
         raise AiReviewError(self._safe_exception_message(ErrorCategory.PROVIDER_UNAVAILABLE, None, model))
 
     def _categorize_exception(self, exc: Exception) -> ErrorCategory:

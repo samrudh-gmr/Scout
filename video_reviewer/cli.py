@@ -229,6 +229,9 @@ def main(argv: list[str] | None = None) -> int:
     from video_reviewer import app_log
 
     app_log.setup_logging()
+    from video_reviewer import telemetry
+
+    telemetry.setup_telemetry()
     try:
         return args.func(args)
     except RuntimeError as exc:
@@ -240,6 +243,9 @@ def main(argv: list[str] | None = None) -> int:
         # not dump a raw Python traceback.
         print(f"{type(exc).__name__}: {exc}")
         return 1
+    finally:
+        # A command is short-lived: send buffered spans before the process ends.
+        telemetry.shutdown_telemetry()
 
 
 if __name__ == "__main__":

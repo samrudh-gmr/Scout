@@ -24,6 +24,7 @@ from video_reviewer.ai_review.providers.anthropic import AnthropicProvider
 from video_reviewer.ai_review.providers.openai import OpenAIProvider
 from video_reviewer.ai_review.providers.codex_proxy import CodexProxyProvider
 from video_reviewer.ai_review.trace import decision_context, write_review_trace
+from video_reviewer import telemetry
 from video_reviewer.app_log import fields, logger
 from video_reviewer.manifest import manifest_transaction, REVIEW_APPROVED, REVIEW_BLOCKED, REVIEW_NEEDS_REVIEW, REVIEW_PENDING, read_manifest_csv, write_manifest_csv
 from video_reviewer.media import extract_sample_frames, create_frame_dir
@@ -121,13 +122,22 @@ def review_rows_with_ai(
         provider=provider.provider_id, model=(model or "").strip() or getattr(provider, "default_model", ""),
         thinking=thinking_level or None, clips=len(indices),
     ))
-    for index in indices:
-        result = _review_one_row(manifest_path, index, provider, config, policy, briefs)
-        results.append(result)
-        if on_progress is not None:
-            on_progress(result)
-    errors = sum(1 for r in results if getattr(r, "error", ""))
-    approved = sum(1 for r in results if getattr(r, "status", "") == REVIEW_APPROVED and not getattr(r, "error", ""))
+    resolved_model = (model or "").strip() or getattr(provider, "default_model", "")
+    with telemetry.span("scout.review_batch", **{
+        "gen_ai.provider.name": provider.provider_id, "gen_ai.request.model": resolved_model, "scout.clips": len(indices),
+    }) as batch:
+        for index in indices:
+            with telemetry.span("scout.review_clip") as clip:
+                result = _review_one_row(manifest_path, index, provider, config, policy, briefs)
+                clip.set(**{"scout.clip": getattr(result, "source_name", None), "scout.status": getattr(result, "status", None)})
+                if getattr(result, "error_category", ""):
+                    clip.fail(result.error_category)
+            results.append(result)
+            if on_progress is not None:
+                on_progress(result)
+        errors = sum(1 for r in results if getattr(r, "error", ""))
+        approved = sum(1 for r in results if getattr(r, "status", "") == REVIEW_APPROVED and not getattr(r, "error", ""))
+        batch.set(**{"scout.approved": approved, "scout.errors": errors})
     logger.info("review_batch done %s", fields(
         approved=approved, needs_review=len(results) - approved - errors, errors=errors,
         seconds=round(time.monotonic() - batch_started, 1),

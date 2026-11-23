@@ -211,6 +211,21 @@ The app does not write pasted API keys to the manifest. External API review send
 
 Rows are auto-approved only when the AI response is confident, SOP-valid, and not using `Unknown` for client/location unless policy allows it. Otherwise they are marked `needs_review` for a human.
 
+## Logs and tracing
+
+Scout writes a log file at `~/.video-renamer/logs/scout.log` (about 2 MB per file, five older files kept). Each model call is one line with the provider, model, attempt number, seconds and token counts. A failed call also records the HTTP status and the provider's own error text, which the short message in the app leaves out. Each clip and each batch gets a summary line.
+
+The log holds clip file names. It never holds prompts, images or API keys.
+
+Tracing with OpenTelemetry is optional and off by default. To turn it on, install the extra and point Scout at a local collector:
+
+```bash
+uv sync --extra otel
+OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4318 uv run video-renamer ai-review --manifest manifest.csv
+```
+
+You can also set `"otel_endpoint"` in `~/.video-renamer/config.json`. Each review batch becomes one trace: a `scout.review_batch` span, a `scout.review_clip` span per clip, and a `chat <model>` span per model call with token counts under the OpenTelemetry `gen_ai.*` names. Spans carry clip file names, so Scout only sends them to an address on this machine unless `SCOUT_OTEL_ALLOW_REMOTE=1` is set. The packaged macOS app does not include the tracing extra.
+
 ## Claude Desktop Review via MCP
 
 The Claude MCP route is still supported. Configure Claude Desktop with the MCP server and use natural language to review videos.
